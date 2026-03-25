@@ -1,0 +1,12 @@
+[deps]
+Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[compat]
+Breeze = "0.4"
+CUDA = "5.9"
+MPI = "0.20"
+Oceananigans = "0.105, 0.106"
