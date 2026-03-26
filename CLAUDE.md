@@ -5,42 +5,42 @@ on NERSC Perlmutter (NVIDIA A100 80 GB GPUs).
 
 ## Current state (2026-03-25)
 
+### Package structure
+- Repo is a Julia package (`BreezeAnelasticBenchmarks`) with PrecompileTools
+- Exports `setup_supercell(arch; kw...)` and `run_benchmark!(model, Nt, dt)`
+- Benchmark scripts in `benchmarks/` directory
+- Breeze pinned to `glw/distributed-tests` branch (PR #441) for distributed support
+
 ### Completed
-- Single-GPU Float32 benchmark: ~0.61 s per 10 time steps
-- Single-GPU Float64 benchmark: ~0.99 s per 10 time steps
-- Results are from Breeze.jl repo runs (jobs 50542402, 50546374, 50547658)
+- Single-GPU Float32: ~0.61 s per 10 time steps
+- Single-GPU Float64: ~0.99 s per 10 time steps
+- 1-GPU distributed Float32: ~0.64 s per 10 time steps
 
-### Pending SLURM jobs (submitted from this repo)
-- Job 50551243: 1-GPU Float32 baseline (for consistent comparison)
-- Job 50551235: 2-GPU Float32 weak scaling
-- Job 50551238: 4-GPU Float32 weak scaling
+### Pending
+- 2, 4, 8-GPU weak scaling jobs submitted on overrun QOS
+  (jobs 50565267, 50565274, 50565277, 50565278)
+- Account m5176_g is out of debug/regular hours
 
-These were pending in the debug queue as of session end. Check output files:
-- `supercell_benchmark-50551243.out`
-- `distributed_supercell_benchmark-50551235.out`
-- `distributed_supercell_benchmark-50551238.out`
-
-### TODO
-- Check if the 3 pending jobs completed successfully
-- Update the README weak-scaling table with distributed results
-- The earlier distributed runs (jobs 50550380, 50550383) failed because
-  MPI.jl was missing from the Breeze.jl examples/Project.toml. The runs
-  from this repo should work since Project.toml here includes MPI.
-- Consider adding Float64 weak-scaling runs
+### Bugs found and fixed
+- Oceananigans v0.105: `inject_halo_communication_boundary_conditions` replaces
+  `nothing` BCs on `Field{Nothing, Nothing, Center}` with DistributedCommunicationBC,
+  causing BoundsError during halo fill. Fixed in Breeze `glw/distributed-tests` branch.
+- Breeze main: `FourierTridiagonalPoissonSolver` doesn't handle `FullyConnected`
+  topology on distributed grids. Fixed in Breeze `glw/distributed-tests` branch
+  by dispatching to `DistributedFourierTridiagonalPoissonSolver`.
 
 ## Project setup
 
 - Julia 1.12.1, `module load julia/1.12.1` on Perlmutter
-- Project is already instantiated (Manifest.toml exists)
-- SLURM account: `m5176_g`, QOS: `debug`, constraint: `gpu`
+- SLURM account: `m5176_g`, constraint: `gpu`
 - GitHub: https://github.com/glwagner/BreezeAnelasticBenchmarks
 
 ## Benchmark design
 
-- Weak scaling: each GPU gets 400 × 400 × 80 grid points (168 km × 168 km × 20 km)
+- Weak scaling: each GPU gets 400 x 400 x 80 grid points (168 km x 168 km x 20 km)
 - Domain extends in x with number of GPUs via `Partition(Ngpus, 1)`
 - Physics: DCMIP2016 supercell, Kessler microphysics, WENO5 advection, anelastic dynamics
-- Timing: 10 time steps at Δt = 0.1 s, three trials (first is warmup/compilation)
+- Timing: 10 time steps at dt = 0.1 s, three trials (first is warmup/compilation)
 - Distributed script uses MPI barriers between trials for synchronized timing
 
 ## Parent project
