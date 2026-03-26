@@ -57,7 +57,7 @@ axislegend(ax1, position = :lt, framevisible = true, labelsize = 11)
 ax2 = Axis(fig[1, 2],
            xlabel = "GPUs",
            ylabel = "Weak scaling efficiency (%)",
-           title = "Efficiency vs 1 GPU",
+           title = "Efficiency vs 2 nodes (8 GPUs)",
            xscale = log2,
            xticks = [1, 2, 4, 8, 16, 20, 40],
            xminorticksvisible = false,
@@ -65,17 +65,22 @@ ax2 = Axis(fig[1, 2],
 
 hlines!(ax2, [100], color = :gray70, linestyle = :dash, linewidth = 1, label = "Ideal")
 
-weno_eff = 100 .* weno_ms[1] ./ weno_ms
+# Baseline: 8 GPUs (2 nodes) = index 4 for WENO5, index 4 for ERF, index 4 for comp
+weno_8gpu_idx = findfirst(==(8), weno_gpus)
+erf_8gpu_idx  = findfirst(==(8), erf_gpus)
+comp_8gpu_idx = findfirst(==(8), comp_gpus)
+
+weno_eff = 100 .* weno_ms[weno_8gpu_idx] ./ weno_ms
 scatter!(ax2, weno_gpus, weno_eff, color = :purple, marker = :diamond, markersize = 12,
          label = "WENO5 anelastic")
 lines!(ax2, weno_gpus, weno_eff, color = :purple, linewidth = 2)
 
-erf_eff = 100 .* erf_ms[1] ./ erf_ms
+erf_eff = 100 .* erf_ms[erf_8gpu_idx] ./ erf_ms
 scatter!(ax2, erf_gpus, erf_eff, color = :dodgerblue, marker = :circle, markersize = 12,
          label = "ERF-like anelastic")
 lines!(ax2, erf_gpus, erf_eff, color = :dodgerblue, linewidth = 2)
 
-comp_eff = 100 .* comp_ms[1] ./ comp_ms
+comp_eff = 100 .* comp_ms[comp_8gpu_idx] ./ comp_ms
 scatter!(ax2, comp_gpus, comp_eff, color = :seagreen, marker = :utriangle, markersize = 12,
          label = "Compressible")
 lines!(ax2, comp_gpus, comp_eff, color = :seagreen, linewidth = 2)
