@@ -11,7 +11,7 @@ using Oceananigans.Units
 using CUDA
 using MPI
 
-export setup_supercell, setup_supercell_erf, run_benchmark!,
+export setup_supercell, setup_supercell_erf, setup_supercell_compressible, run_benchmark!,
        GPU, CPU, Distributed, Partition
 
 
@@ -191,6 +191,90 @@ function setup_supercell_erf(arch;
                             thermodynamic_constants = constants)
 
     set!(model, θ=theta_init, ℋ=H_init, u=u_init)
+
+    return model
+end
+
+"""
+    setup_supercell_compressible(arch; kw...)
+
+Compressible dynamics supercell benchmark: fully explicit time stepping,
+Centered(2) advection, ScalarDiffusivity, no Poisson pressure solve.
+Designed for ERF weak scaling comparison (no global communication in pressure).
+"""
+function setup_supercell_compressible(arch;
+                                      FT = Float32,
+                                      Nx = 200, Ny = 200, Nz = 80,
+                                      Lx = 84kilometers, Ly = 84kilometers, Lz = 20kilometers)
+
+    Oceananigans.defaults.FloatType = FT
+
+    grid = RectilinearGrid(arch,
+                           size = (Nx, Ny, Nz),
+                           x = (0, Lx),
+                           y = (0, Ly),
+                           z = (0, Lz),
+                           halo = (1, 1, 1),
+                           topology = (Periodic, Periodic, Bounded))
+
+    constants = ThermodynamicConstants(saturation_vapor_pressure = TetensFormula())
+
+    g  = constants.gravitational_acceleration
+    cpd = constants.dry_air.heat_capacity
+
+    theta0 = 300
+    thetap = 343
+    zp     = 12000
+    Tp     = 213
+    zs     = 5kilometers
+    us     = 30
+    uc     = 15
+
+    function theta_background(z)
+        thetat = theta0 + (thetap - theta0) * (z / zp)^(5/4)
+        thetas = thetap * exp(g / (cpd * Tp) * (z - zp))
+        return (z <= zp) * thetat + (z > zp) * thetas
+    end
+
+    # Fully explicit compressible dynamics (no pressure solve)
+    dynamics = CompressibleDynamics(;
+        surface_pressure = 100000,
+        reference_potential_temperature = theta_background)
+
+    function u_background(z)
+        ul = us * (z / zs) - uc
+        ut = (-4/5 + 3 * (z / zs) - 5/4 * (z / zs)^2) * us - uc
+        uu = us - uc
+        return (z < (zs - 1000)) * ul +
+               (abs(z - zs) <= 1000) * ut +
+               (z > (zs + 1000)) * uu
+    end
+
+    dtheta = 3
+    rbh    = 10kilometers
+    rbv    = 1500
+    zb     = 1500
+    xb     = Lx / 2
+    yb     = Ly / 2
+
+    function theta_init(x, y, z)
+        theta_bar = theta_background(z)
+        r = sqrt((x - xb)^2 + (y - yb)^2)
+        R = sqrt((r / rbh)^2 + ((z - zb) / rbv)^2)
+        theta_prime = ifelse(R < 1, dtheta * cos((pi / 2) * R)^2, 0.0)
+        return theta_bar + theta_prime
+    end
+
+    u_init(x, y, z) = u_background(z)
+
+    advection = Centered(order=2)
+    closure = ScalarDiffusivity(ν=200, κ=200)
+    model = AtmosphereModel(grid; dynamics, advection, closure,
+                            thermodynamic_constants = constants)
+
+    # Initialize density from reference state, set θ and u
+    ref = model.dynamics.reference_state
+    set!(model, θ=theta_init, u=u_init, ρ=ref.density)
 
     return model
 end

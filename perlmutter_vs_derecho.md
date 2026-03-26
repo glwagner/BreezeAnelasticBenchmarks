@@ -156,43 +156,55 @@ The README states "Both systems use NVIDIA A100-SXM4-80GB GPUs" but diagnostic o
 NVIDIA A100-SXM4-40GB, 580.65.06, 40960 MiB, 210 MHz, 1215 MHz
 ```
 
-## Conclusions
+## Conclusions and Optimizations (2026-03-26)
 
-1. **The 4x slowdown is a software issue, not hardware.** Single-GPU non-distributed
-   performance is identical on both systems (~0.61 s for Float32).
+### Root causes identified and fixed
 
-2. **The Distributed architecture adds ~4x overhead on a single rank.** This overhead
-   likely comes from the distributed pressure solver, halo communication infrastructure,
-   and MPI synchronization.
+1. **1-GPU distributed overhead (2.95x → 1.19x):** `fill_corners!` called `sync_device!`
+   on every halo fill even with no corner neighbors. Fixed by early return.
 
-3. **No Perlmutter distributed results exist for comparison.** The Perlmutter weak
-   scaling jobs are still pending (NERSC account out of hours). It is likely that
-   Perlmutter distributed runs would show the same ~4x overhead.
+2. **Multi-GPU pressure solver overhead (3.6x speedup on 2 GPUs):** Two issues:
+   - The Z-stretched solver did 4 MPI transposes per solve; for slab-x (Ry=1) only
+     2 are needed (tridiagonal can be solved in x-local space where z is fully local).
+   - Cray MPICH's `Alltoallv` is **28x slower** than `Alltoall` for GPU buffers.
+     Replacing with `Alltoall` for equal partitions was the single biggest win.
 
-4. **The CUDA memory pool setting doesn't affect compute performance** — all three pool
-   options (default/binned, none, cuda) produce identical single-GPU benchmark times.
-   However, `pool=none` is **required** for multi-GPU CUDA-aware MPI (cuIpcGetMemHandle
-   fails with the default binned pool).
+3. **Redundant halo fills in Breeze (9 per timestep removed):** Reference density
+   (constant), potential temperature density (prognostic, already async-filled), and
+   density/ρθ in compressible dynamics were filled unnecessarily.
 
-5. **Multi-GPU runs fail without `JULIA_CUDA_MEMORY_POOL=none`** — the GTL layer's
-   `cuIpcGetMemHandle` cannot handle memory from CUDA.jl's binned pool. The 2-GPU and
-   8-GPU runs (jobs 5616280, 5616281) failed with this error. Runs with `pool=none` succeed.
+### Pressure solver isolated benchmark (30 solves, 200×200×80/GPU)
 
-## Recommended Next Steps
+| GPUs | Baseline | Optimized | Speedup |
+|------|----------|-----------|---------|
+| 1    | 7.9 ms/solve | 8.4 ms/solve | — |
+| 2    | 129.5 ms/solve | 36.2 ms/solve | **3.6x** |
+| 4    | 109.6 ms/solve | 37.7 ms/solve | **2.9x** |
 
-1. **Run 8-GPU benchmark with `JULIA_CUDA_MEMORY_POOL=none`** — this is the only
-   missing data point in the Derecho weak scaling suite.
+### Transpose communication benchmark (round-trip, 200×200×80 ComplexF32)
 
-2. **Run Perlmutter distributed benchmarks** to determine if the Distributed overhead
-   is system-specific or inherent to the Oceananigans distributed code path.
+| Strategy | 2 GPUs (NVLink) | 4 GPUs (NVLink) | 8 GPUs (Slingshot) |
+|----------|----------------|-----------------|-------------------|
+| `Alltoallv` (original) | 52.0 ms | 46.8 ms | 70.5 ms |
+| **`Alltoall`** | **1.85 ms** | **2.20 ms** | **8.69 ms** |
+| `Isend`/`Irecv` | 18.8 ms | 12.0 ms | 10.5 ms |
+| GPU memcpy (floor) | 1.03 ms | 1.05 ms | 1.05 ms |
 
-3. **Profile the Distributed code path** to identify where the 4x overhead comes from:
-   - Time the pressure solver separately (distributed vs non-distributed)
-   - Time halo fills separately
-   - Check if MPI barriers are adding latency
+### Branches
 
-4. **Fix the weak scaling regression** (2+ GPUs being 3x slower than 1 distributed GPU)
-   — this is likely the more impactful issue for the project goals.
+- **Oceananigans** [`glw/optimize-distributed-solver`](https://github.com/CliMA/Oceananigans.jl/tree/glw/optimize-distributed-solver):
+  fill_corners fix + Periodic y-FFT + slab-x tridiag + Alltoall
+- **Oceananigans** [`glw/skip-empty-fill-corners`](https://github.com/CliMA/Oceananigans.jl/tree/glw/skip-empty-fill-corners):
+  fill_corners fix only
+- **Breeze** [`glw/distributed-tests`](https://github.com/NumericalEarth/Breeze.jl/tree/glw/distributed-tests):
+  redundant halo fill removal + distributed solver dispatch
+
+### Other findings
+
+- `JULIA_CUDA_MEMORY_POOL=none` is **required** for multi-GPU CUDA-aware MPI
+  (cuIpcGetMemHandle fails with default binned pool).
+- Single-GPU non-distributed performance is identical on Perlmutter and Derecho (~0.61 s).
+- Multi-node precompilation can deadlock; precompile on a single node first.
 
 ## Data Sources
 

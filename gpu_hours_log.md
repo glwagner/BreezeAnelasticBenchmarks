@@ -32,7 +32,12 @@ Account: UMIT0049 (Derecho)
 
 | 5627654 | 2026-03-26 | 1 | 0:30:00 | ~0:10 | 0.17 | Profile with fill_corners! fix (SUCCESS) |
 
-**Total estimated GPU-hours used: ~3.4 hrs**
+| 5628432-34 | 2026-03-26 | 1-4 | 0:30:00 | ~0:05 | 0.25 | Pressure solver baseline (1,2,4 GPU) |
+| 5628445 | 2026-03-26 | 2 | 0:30:00 | ~0:05 | 0.17 | Pressure solver component breakdown |
+| 5628476-77 | 2026-03-26 | 1-2 | 0:30:00 | ~0:05 | 0.17 | Pressure solver Hyp A test |
+| 5628534-36 | 2026-03-26 | 1-4 | 0:30:00 | ~0:05 | 0.25 | Pressure solver Hyp A+B test (2x improvement!) |
+
+**Total estimated GPU-hours used: ~4.2 hrs** (excluding scaling suite jobs)
 
 ## Pending Jobs
 

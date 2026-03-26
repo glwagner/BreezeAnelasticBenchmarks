@@ -179,27 +179,75 @@ Single-GPU performance matches Perlmutter despite
 
 Additional results with Ry=2 and higher node counts pending.
 
-#### Performance analysis
+#### Weak scaling — ERF-equivalent with optimizations (200×200×80 per GPU, x-only partition)
 
-**Root cause identified:** The distributed code path in Oceananigans calls
-`sync_device!` (= `CUDA.synchronize()`) inside `fill_corners!` on every halo fill,
-even when there are no corner neighbors (1 rank, or slab decomposition). This flushes
-the GPU's async execution pipeline ~300 times per 10 timesteps, causing massive
-throughput loss.
+After applying all Oceananigans and Breeze optimizations (see below):
 
-**Fix applied (local):** Added early return in `fill_corners!` when all corner
-connectivity is `nothing`. Result: 1-GPU distributed overhead dropped from
-2.95x to 1.19x (2.94 s → 1.19 s). This fix needs to be upstreamed to Oceananigans.
+| GPUs | Nodes | Trial 2 | Before opts | Speedup | Eff vs 1 GPU | Eff vs 2 nodes |
+|------|-------|---------|-------------|---------|-------------|---------------|
+| 1    | 1     | 0.651 s | 0.570 s     | —       | 100%        | —             |
+| 2    | 1     | 1.318 s | 3.557 s     | 2.7x    | 49%         | —             |
+| 4    | 1     | 1.545 s | 3.104 s     | 2.0x    | 42%         | —             |
+| 8    | 2     | 2.598 s | 3.144 s     | 1.2x    | 25%         | 100%          |
+| 40   | 10    | 2.946 s | 5.842 s     | 2.0x    | 22%         | 88%           |
 
-**Remaining issue:** Multi-GPU overhead is dominated by the pressure solver's
-distributed transpose operations (`Alltoallv!`). The Z-stretched
-`DistributedFourierTridiagonalPoissonSolver` requires 8 MPI transpose operations
-per pressure solve × 3 RK3 stages × 10 timesteps = 240 transposes, each with
-GPU sync + MPI collective. This communication cost is roughly constant regardless
-of GPU count, explaining why 2-GPU and 8-GPU times are similar.
+## Optimizations
+
+Four optimizations were developed during this benchmarking effort. These are
+on the Oceananigans branch
+[`glw/optimize-distributed-solver`](https://github.com/CliMA/Oceananigans.jl/tree/glw/optimize-distributed-solver)
+and the Breeze branch
+[`glw/distributed-tests`](https://github.com/NumericalEarth/Breeze.jl/tree/glw/distributed-tests).
+
+### 1. Skip `fill_corners!` when no corner neighbors exist (Oceananigans)
+
+`fill_corners!` called `sync_device!` (`CUDA.synchronize()`) on every distributed
+halo fill, even when all corner connectivity is `nothing` (1 rank, slab decomposition).
+This flushed the GPU pipeline ~300 times per 10 timesteps.
+
+**Fix:** Early return when all four corner neighbors are `nothing`.
+**Impact:** 1-GPU distributed overhead dropped from 2.95x to 1.19x.
+
+### 2. Solve tridiagonal in x-local space for slab-x decomposition (Oceananigans)
+
+The Z-stretched `DistributedFourierTridiagonalPoissonSolver` performed 4 MPI
+transpose operations per pressure solve. For slab-x decomposition (`Partition(Ngpus, 1)`),
+z is always fully local in x-local space, so the tridiagonal solve can happen
+directly after the forward FFTs without transposing back to z-local first.
+
+**Fix:** New `_slab_x_solve!` method that does `y-FFT → transpose → x-FFT → tridiag → x-IFFT → transpose → y-IFFT`.
+**Impact:** 4 → 2 MPI transposes per solve = 2.1x solver speedup on 2 GPUs.
+
+### 3. Use `Alltoall` instead of `Alltoallv` for equal partitions (Oceananigans)
+
+Cray MPICH's `Alltoallv` is catastrophically slow for GPU buffers compared to
+`Alltoall` (28x slower on 2 A100 GPUs over NVLink). Since most simulations use
+equal partition sizes, the code now uses `Alltoall` when all chunk counts are equal.
+
+**Fix:** Check if all counts are equal; use `MPI.Alltoall!` with `UBuffer` instead of `MPI.Alltoallv!` with `VBuffer`.
+**Impact:** Transpose round-trip: 52 ms → 1.85 ms on 2 intra-node GPUs.
+
+### 4. Remove redundant halo fills (Breeze)
+
+Several `fill_halo_regions!` calls per RK3 stage were redundant:
+- Reference density (constant, z-only, never changes)
+- Potential temperature density (prognostic, already in async fill)
+- Density and ρθ in `compute_auxiliary_dynamics_variables!` (already in async fill)
+
+**Fix:** Removed 3 redundant fills per RK3 stage = 90 fewer fills per benchmark trial.
+
+### Combined pressure solver improvement
+
+Isolated pressure solver benchmark (30 solves, 200×200×80/GPU, Periodic×Periodic×Bounded):
+
+| GPUs | Baseline | Optimized | Speedup |
+|------|----------|-----------|---------|
+| 1    | 7.9 ms/solve | 8.4 ms/solve | — |
+| 2    | 129.5 ms/solve | 36.2 ms/solve | 3.6x |
+| 4    | 109.6 ms/solve | 37.7 ms/solve | 2.9x |
 
 See [`perlmutter_vs_derecho.md`](perlmutter_vs_derecho.md) and
-[`scaling_plan.md`](scaling_plan.md) for detailed analysis and next steps.
+[`scaling_plan.md`](scaling_plan.md) for detailed investigation notes.
 
 ## References
 
