@@ -29,20 +29,22 @@ model = setup_supercell(arch; FT,
                          Ny = 400, Nz = 80,
                          Lx = Lx_per_gpu * Ngpus)
 
+Nt = parse(Int, get(ENV, "NT", "10"))
+
 MPI.Barrier(MPI.COMM_WORLD)
 
 # Warmup (includes any remaining compilation)
-elapsed1 = @elapsed run_benchmark!(model)
+elapsed1 = @elapsed run_benchmark!(model, Nt)
 MPI.Barrier(MPI.COMM_WORLD)
 
-elapsed2 = @elapsed run_benchmark!(model)
+elapsed2 = @elapsed run_benchmark!(model, Nt)
 MPI.Barrier(MPI.COMM_WORLD)
 
-elapsed3 = @elapsed run_benchmark!(model)
+elapsed3 = @elapsed run_benchmark!(model, Nt)
 MPI.Barrier(MPI.COMM_WORLD)
 
 if rank == 0
-    @info @sprintf("Warmup:  %.3f seconds", elapsed1)
-    @info @sprintf("Trial 1: %.3f seconds", elapsed2)
-    @info @sprintf("Trial 2: %.3f seconds", elapsed3)
+    @info @sprintf("Nt=%d  Warmup:  %.3f seconds (%.1f ms/step)", Nt, elapsed1, 1000elapsed1/Nt)
+    @info @sprintf("Nt=%d  Trial 1: %.3f seconds (%.1f ms/step)", Nt, elapsed2, 1000elapsed2/Nt)
+    @info @sprintf("Nt=%d  Trial 2: %.3f seconds (%.1f ms/step)", Nt, elapsed3, 1000elapsed3/Nt)
 end
