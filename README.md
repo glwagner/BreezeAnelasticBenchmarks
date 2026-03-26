@@ -18,9 +18,11 @@ caches GPU kernel compilation so benchmark jobs start faster.
 |------|-------------|
 | `src/BreezeAnelasticBenchmarks.jl` | Package module with setup, benchmark, and precompile workloads |
 | `benchmarks/supercell_benchmark.jl` | Single-GPU benchmark script |
-| `benchmarks/supercell_benchmark.sh` | SLURM submission for single-GPU runs |
+| `benchmarks/supercell_benchmark.sh` | SLURM submission for single-GPU runs (Perlmutter) |
+| `benchmarks/derecho_supercell_benchmark.sh` | PBS submission for single-GPU runs (Derecho) |
 | `benchmarks/distributed_supercell_benchmark.jl` | MPI weak-scaling benchmark script |
-| `benchmarks/distributed_supercell_benchmark.sh` | SLURM submission for multi-GPU runs |
+| `benchmarks/distributed_supercell_benchmark.sh` | SLURM submission for multi-GPU runs (Perlmutter) |
+| `benchmarks/derecho_distributed_supercell_benchmark.sh` | PBS submission for multi-GPU runs (Derecho) |
 | `Project.toml` | Julia package dependencies |
 
 ## Benchmark configuration
@@ -78,6 +80,47 @@ Perlmutter has 4 A100 GPUs per node, so 8 GPUs requires `--nodes=2`.
 FLOAT_TYPE=Float64 sbatch benchmarks/supercell_benchmark.sh
 ```
 
+## Running on Derecho (NCAR)
+
+Derecho has 82 GPU nodes, each with 4 NVIDIA A100 GPUs and 128 AMD Milan cores.
+It uses PBS (not SLURM) and Cray MPICH.
+
+### Setup
+
+```bash
+module --force purge
+module load ncarenv nvhpc cuda cray-mpich
+julia +1.12 --project=. -e 'using Pkg; Pkg.instantiate()'
+julia +1.12 --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary(vendor="cray")'
+julia +1.12 --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+### Single GPU
+
+```bash
+qsub benchmarks/derecho_supercell_benchmark.sh
+```
+
+### Weak scaling
+
+```bash
+qsub -v NGPUS=1 -l select=1:ncpus=64:mpiprocs=1:ngpus=1:gpu_type=a100:mem=384GB benchmarks/derecho_distributed_supercell_benchmark.sh
+qsub -v NGPUS=2 -l select=1:ncpus=64:mpiprocs=2:ngpus=2:gpu_type=a100:mem=384GB benchmarks/derecho_distributed_supercell_benchmark.sh
+qsub -v NGPUS=4 -l select=1:ncpus=64:mpiprocs=4:ngpus=4:gpu_type=a100:mem=384GB benchmarks/derecho_distributed_supercell_benchmark.sh
+qsub -v NGPUS=8 -l select=2:ncpus=64:mpiprocs=4:ngpus=4:gpu_type=a100:mem=384GB benchmarks/derecho_distributed_supercell_benchmark.sh
+```
+
+Derecho has 4 A100 GPUs per node, so 8 GPUs requires `select=2`.
+
+### Double precision
+
+```bash
+FLOAT_TYPE=Float64 qsub benchmarks/derecho_supercell_benchmark.sh
+```
+
+See [Oceananigans on Derecho](https://github.com/CliMA/Oceananigans.jl/discussions/3669)
+for additional setup guidance.
+
 ## Dependencies
 
 Breeze is pinned to the
@@ -88,19 +131,31 @@ branch, which includes fixes for distributed anelastic simulations
 
 ## Results
 
-All benchmarks run on NERSC Perlmutter (NVIDIA A100-SXM4-80GB GPUs),
-Julia 1.12.1.
+Both systems use NVIDIA A100-SXM4-80GB GPUs.
 
-### Single GPU
+### Perlmutter (NERSC) — Julia 1.12.1
+
+#### Single GPU
 
 | Precision | Trial 1 | Trial 2 |
 |-----------|---------|---------|
 | Float32   | 0.615 s | 0.612 s |
 | Float64   | 0.985 s | 0.987 s |
 
-### Weak scaling (Float32)
+#### Weak scaling (Float32)
 
 Results pending.
+
+### Derecho (NCAR) — Julia 1.12.5
+
+#### Weak scaling (Float32)
+
+| GPUs | Nodes | Trial 1 | Trial 2 |
+|------|-------|---------|---------|
+| 1    | 1     | 2.595 s | 2.669 s |
+| 2    | 1     | 7.959 s | 7.475 s |
+| 4    | 1     | 7.234 s | 7.642 s |
+| 8    | 2     | 6.867 s | 7.127 s |
 
 ## References
 
