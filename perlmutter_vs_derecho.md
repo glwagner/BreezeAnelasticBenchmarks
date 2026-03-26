@@ -21,17 +21,48 @@ by the **Distributed architecture code path** being used even for single-GPU run
 
 ### Distributed benchmarks (Derecho weak scaling)
 
-| GPUs | Nodes | Trial 1  | Trial 2  |
-|------|-------|----------|----------|
-| 1    | 1     | 2.319 s  | 2.417 s  |
-| 1*   | 1     | 2.595 s  | 2.669 s  |
-| 2    | 1     | 7.959 s  | 7.475 s  |
-| 4    | 1     | 7.234 s  | 7.642 s  |
-| 8    | 2     | 6.867 s  | 7.127 s  |
+**Early runs (default memory pool, jobs 5608xxx):**
 
-*Second 1-GPU run.
+| GPUs | Nodes | Trial 1  | Trial 2  | Job     |
+|------|-------|----------|----------|---------|
+| 1    | 1     | 2.319 s  | 2.417 s  | 5608630 |
+| 1    | 1     | 2.595 s  | 2.669 s  | 5608759 |
+| 2    | 1     | 7.959 s  | 7.475 s  | 5608760 |
+| 4    | 1     | 7.234 s  | 7.642 s  | 5608761 |
+| 8    | 2     | 6.867 s  | 7.127 s  | 5608762 |
 
-The 1-GPU distributed run (~2.4 s) is 4x slower than the 1-GPU non-distributed run (~0.61 s).
+**Latest runs (jobs 5616xxx):**
+
+| GPUs | Nodes | Pool    | Trial 1  | Trial 2  | Job     | Status |
+|------|-------|---------|----------|----------|---------|--------|
+| 1    | 1     | default | 2.687 s  | 2.677 s  | 5616519 | OK     |
+| 1    | 1     | none    | 2.502 s  | 2.571 s  | 5616520 | OK     |
+| 1    | 1     | default | 2.608 s  | 2.583 s  | 5616279 | OK     |
+| 2    | 1     | default | —        | —        | 5616280 | FAILED |
+| 2    | 1     | none    | 7.901 s  | 7.623 s  | 5616392 | OK     |
+| 4    | 1     | none    | 7.011 s  | 6.759 s  | 5616391 | OK     |
+| 4    | 1     | none    | 7.166 s  | 6.835 s  | 5616393 | OK     |
+| 8    | 2     | default | —        | —        | 5616281 | FAILED |
+| 8    | 2     | none    | —        | —        | —       | NOT RUN|
+
+The 1-GPU distributed run (~2.6 s) is 4x slower than the 1-GPU non-distributed run (~0.61 s).
+
+### CUDA-aware MPI requires `JULIA_CUDA_MEMORY_POOL=none`
+
+The 2-GPU and 8-GPU runs without `JULIA_CUDA_MEMORY_POOL=none` failed with:
+```
+(GTL DEBUG) cuIpcGetMemHandle: invalid argument, CUDA_ERROR_INVALID_VALUE, line no 148
+MPIError: Invalid count
+```
+
+The default CUDA.jl binned memory pool allocates memory that cannot be shared via
+`cuIpcGetMemHandle` between MPI ranks. Setting `JULIA_CUDA_MEMORY_POOL=none` forces
+direct CUDA allocations which are IPC-compatible. This is required for multi-GPU
+CUDA-aware MPI on Derecho (and likely any Cray MPICH system using GTL).
+
+Note: 1-GPU distributed runs work with any pool setting because no inter-rank IPC occurs.
+
+**8-GPU run with `pool=none` has not been run yet.**
 
 ### Perlmutter weak scaling (distributed)
 
@@ -118,13 +149,19 @@ NVIDIA A100-SXM4-40GB, 580.65.06, 40960 MiB, 210 MHz, 1215 MHz
    scaling jobs are still pending (NERSC account out of hours). It is likely that
    Perlmutter distributed runs would show the same ~4x overhead.
 
-4. **The CUDA memory pool setting is irrelevant.** All three pool options (default/binned,
-   none, cuda) produce identical benchmark times on Derecho.
+4. **The CUDA memory pool setting doesn't affect compute performance** — all three pool
+   options (default/binned, none, cuda) produce identical single-GPU benchmark times.
+   However, `pool=none` is **required** for multi-GPU CUDA-aware MPI (cuIpcGetMemHandle
+   fails with the default binned pool).
+
+5. **Multi-GPU runs fail without `JULIA_CUDA_MEMORY_POOL=none`** — the GTL layer's
+   `cuIpcGetMemHandle` cannot handle memory from CUDA.jl's binned pool. The 2-GPU and
+   8-GPU runs (jobs 5616280, 5616281) failed with this error. Runs with `pool=none` succeed.
 
 ## Recommended Next Steps
 
-1. **Run non-distributed single-GPU benchmark on Perlmutter** using `supercell_benchmark.jl`
-   to confirm matching performance (already done: 0.615 s).
+1. **Run 8-GPU benchmark with `JULIA_CUDA_MEMORY_POOL=none`** — this is the only
+   missing data point in the Derecho weak scaling suite.
 
 2. **Run Perlmutter distributed benchmarks** to determine if the Distributed overhead
    is system-specific or inherent to the Oceananigans distributed code path.
@@ -136,8 +173,6 @@ NVIDIA A100-SXM4-40GB, 580.65.06, 40960 MiB, 210 MHz, 1215 MHz
 
 4. **Fix the weak scaling regression** (2+ GPUs being 3x slower than 1 distributed GPU)
    — this is likely the more impactful issue for the project goals.
-
-5. **Correct the README** to reflect that Derecho has A100-SXM4-40GB GPUs.
 
 ## Data Sources
 
