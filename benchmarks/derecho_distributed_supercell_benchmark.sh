@@ -38,6 +38,6 @@ exec $*
 EoF_s
 chmod +x launch.sh
 
-mpiexec -n "${NGPUS}" -ppn $(( NGPUS < 4 ? NGPUS : 4 )) \
-    ./launch.sh julia +1.12 --project=. \
+# Let PALS/PBS determine rank count from the select= resource spec
+mpiexec ./launch.sh julia +1.12 --project=. \
     benchmarks/distributed_supercell_benchmark.jl --float-type "$FLOAT_TYPE"

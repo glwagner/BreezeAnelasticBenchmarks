@@ -157,21 +157,49 @@ Results pending (account out of hours).
 Single-GPU performance matches Perlmutter despite
 40GB vs 80GB memory (1,555 vs 2,039 GB/s bandwidth).
 
-#### Weak scaling (Float32, distributed)
+#### Weak scaling — WENO5 supercell (400×400×80 per GPU, halo=5, x-only partition)
 
-| GPUs | Nodes | Trial 1 | Trial 2 |
-|------|-------|---------|---------|
-| 1    | 1     | 2.608 s | 2.583 s |
-| 2    | 1     | 7.901 s | 7.623 s |
-| 4    | 1     | 7.011 s | 6.759 s |
-| 8    | 2     | 7.166 s | 6.835 s |
+| GPUs | Nodes | Partition | Trial 1 | Trial 2 | Eff vs 1 GPU | Eff vs 2 nodes |
+|------|-------|-----------|---------|---------|-------------|---------------|
+| 1    | 1     | 1×1       | 0.887 s | 0.940 s | 100%        | —             |
+| 2    | 1     | 2×1       | 7.655 s | 7.711 s | 12%         | —             |
+| 4    | 1     | 4×1       | 7.106 s | 6.743 s | 14%         | —             |
+| 8    | 2     | 8×1       | 7.483 s | 7.714 s | 12%         | 100%          |
+| 16   | 4     | 16×1      | 10.295 s| 10.291 s| 9%          | 75%           |
 
-**Known issue:** The `Distributed` code path adds ~4x overhead even
-on a single GPU (2.6 s vs 0.61 s). This overhead likely comes from
-the `DistributedFourierTridiagonalPoissonSolver` and halo communication
-infrastructure. Multi-GPU runs show an additional ~3x overhead (7 s vs 2.6 s)
-from inter-GPU communication. Scaling from 4→8 GPUs across nodes is good.
-See [`perlmutter_vs_derecho.md`](perlmutter_vs_derecho.md) for detailed analysis.
+#### Weak scaling — ERF-equivalent (200×200×80 per GPU, Centered(2), ScalarDiffusivity, halo=1)
+
+| GPUs | Nodes | Partition | Trial 1 | Trial 2 | Eff vs 1 GPU | Eff vs 2 nodes |
+|------|-------|-----------|---------|---------|-------------|---------------|
+| 1    | 1     | 1×1       | 0.655 s | 0.570 s | 100%        | —             |
+| 2    | 1     | 2×1       | 3.181 s | 3.557 s | 16%         | —             |
+| 4    | 1     | 4×1       | 3.053 s | 3.104 s | 18%         | —             |
+| 8    | 2     | 8×1       | 4.088 s | 3.144 s | 18%         | 100%          |
+| 16   | 4     | 2×8       | 5.760 s | 5.998 s | 10%         | 52%           |
+
+Additional results with Ry=2 and higher node counts pending.
+
+#### Performance analysis
+
+**Root cause identified:** The distributed code path in Oceananigans calls
+`sync_device!` (= `CUDA.synchronize()`) inside `fill_corners!` on every halo fill,
+even when there are no corner neighbors (1 rank, or slab decomposition). This flushes
+the GPU's async execution pipeline ~300 times per 10 timesteps, causing massive
+throughput loss.
+
+**Fix applied (local):** Added early return in `fill_corners!` when all corner
+connectivity is `nothing`. Result: 1-GPU distributed overhead dropped from
+2.95x to 1.19x (2.94 s → 1.19 s). This fix needs to be upstreamed to Oceananigans.
+
+**Remaining issue:** Multi-GPU overhead is dominated by the pressure solver's
+distributed transpose operations (`Alltoallv!`). The Z-stretched
+`DistributedFourierTridiagonalPoissonSolver` requires 8 MPI transpose operations
+per pressure solve × 3 RK3 stages × 10 timesteps = 240 transposes, each with
+GPU sync + MPI collective. This communication cost is roughly constant regardless
+of GPU count, explaining why 2-GPU and 8-GPU times are similar.
+
+See [`perlmutter_vs_derecho.md`](perlmutter_vs_derecho.md) and
+[`scaling_plan.md`](scaling_plan.md) for detailed analysis and next steps.
 
 ## References
 

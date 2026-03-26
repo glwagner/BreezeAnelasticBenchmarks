@@ -11,7 +11,7 @@ using Oceananigans.Units
 using CUDA
 using MPI
 
-export setup_supercell, run_benchmark!,
+export setup_supercell, setup_supercell_erf, run_benchmark!,
        GPU, CPU, Distributed, Partition
 
 
@@ -99,6 +99,95 @@ function setup_supercell(arch;
     microphysics = DCMIP2016KesslerMicrophysics()
     advection = WENO(order=5)
     model = AtmosphereModel(grid; dynamics, microphysics, advection,
+                            thermodynamic_constants = constants)
+
+    set!(model, θ=theta_init, ℋ=H_init, u=u_init)
+
+    return model
+end
+
+"""
+    setup_supercell_erf(arch; kw...)
+
+ERF-equivalent supercell benchmark: Centered(2) advection, ScalarDiffusivity,
+smaller per-GPU grid (200×200×80), halo=(1,1,1).
+
+Designed to match ERF weak scaling test configuration for comparison.
+"""
+function setup_supercell_erf(arch;
+                              FT = Float32,
+                              Nx = 200, Ny = 200, Nz = 80,
+                              Lx = 84kilometers, Ly = 84kilometers, Lz = 20kilometers)
+
+    Oceananigans.defaults.FloatType = FT
+
+    grid = RectilinearGrid(arch,
+                           size = (Nx, Ny, Nz),
+                           x = (0, Lx),
+                           y = (0, Ly),
+                           z = (0, Lz),
+                           halo = (1, 1, 1),
+                           topology = (Periodic, Periodic, Bounded))
+
+    constants = ThermodynamicConstants(saturation_vapor_pressure = TetensFormula())
+
+    reference_state = ReferenceState(grid, constants,
+                                     surface_pressure = 100000,
+                                     potential_temperature = 300)
+
+    dynamics = AnelasticDynamics(reference_state)
+
+    # Same DCMIP2016 background profiles as setup_supercell
+    g  = constants.gravitational_acceleration
+    cpd = constants.dry_air.heat_capacity
+
+    theta0 = 300
+    thetap = 343
+    zp     = 12000
+    Tp     = 213
+    zs     = 5kilometers
+    us     = 30
+    uc     = 15
+
+    function theta_background(z)
+        thetat = theta0 + (thetap - theta0) * (z / zp)^(5/4)
+        thetas = thetap * exp(g / (cpd * Tp) * (z - zp))
+        return (z <= zp) * thetat + (z > zp) * thetas
+    end
+
+    H_background(z) = (1 - 3/4 * (z / zp)^(5/4)) * (z <= zp) + 1/4 * (z > zp)
+
+    function u_background(z)
+        ul = us * (z / zs) - uc
+        ut = (-4/5 + 3 * (z / zs) - 5/4 * (z / zs)^2) * us - uc
+        uu = us - uc
+        return (z < (zs - 1000)) * ul +
+               (abs(z - zs) <= 1000) * ut +
+               (z > (zs + 1000)) * uu
+    end
+
+    dtheta = 3
+    rbh    = 10kilometers
+    rbv    = 1500
+    zb     = 1500
+    xb     = Lx / 2
+    yb     = Ly / 2
+
+    function theta_init(x, y, z)
+        theta_bar = theta_background(z)
+        r = sqrt((x - xb)^2 + (y - yb)^2)
+        R = sqrt((r / rbh)^2 + ((z - zb) / rbv)^2)
+        theta_prime = ifelse(R < 1, dtheta * cos((pi / 2) * R)^2, 0.0)
+        return theta_bar + theta_prime
+    end
+
+    u_init(x, y, z) = u_background(z)
+    H_init(x, y, z) = H_background(z)
+
+    microphysics = DCMIP2016KesslerMicrophysics()
+    advection = Centered(order=2)
+    closure = ScalarDiffusivity(ν=200, κ=200)
+    model = AtmosphereModel(grid; dynamics, microphysics, advection, closure,
                             thermodynamic_constants = constants)
 
     set!(model, θ=theta_init, ℋ=H_init, u=u_init)

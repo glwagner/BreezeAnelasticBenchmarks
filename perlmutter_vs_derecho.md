@@ -68,31 +68,51 @@ Note: 1-GPU distributed runs work with any pool setting because no inter-rank IP
 
 Results pending — no distributed benchmark results from Perlmutter are available for comparison.
 
-## Root Cause Analysis
+## Root Cause Analysis (Updated 2026-03-26)
 
-### The 4x slowdown: Distributed architecture overhead
+### Profiling results (job 5627505)
 
-The distributed benchmark script (`distributed_supercell_benchmark.jl`) always uses:
-```julia
-arch = Distributed(GPU(); partition=Partition(Ngpus, 1))
-```
+| Component | GPU | Distributed | Overhead |
+|-----------|-----|------------|----------|
+| 10 time steps | 0.997 s | 2.939 s | 2.95x |
+| Solver only (30x) | 0.092 s | 0.236 s | +0.143 s |
+| Momentum halo (90x) | 0.015 s | 0.023 s | +0.009 s |
+| Pressure halo (30x) | 0.007 s | 0.007 s | 0 |
+| **Unaccounted** | — | — | **+1.791 s (92%)** |
 
-Even when `Ngpus=1`, this creates a full distributed architecture. The output confirms:
-```
-Warning: We are building a Distributed architecture on a single MPI rank.
-```
+FFT comparison (60 calls):
+| Batched 2D | Two 1D | Reshaped 1D |
+|-----------|--------|-------------|
+| 0.031 s | 0.287 s (9.3x!) | 0.012 s |
 
-The Distributed code path adds overhead from:
-1. **DistributedFourierTridiagonalPoissonSolver** — the distributed pressure solver
-   replaces the standard `FourierTridiagonalPoissonSolver`, adding MPI communication
-   and potentially different algorithm paths even on a single rank
-2. **MPI barriers and communication setup** — each time step includes MPI barrier
-   synchronization and halo communication infrastructure
-3. **Distributed boundary conditions** — `inject_halo_communication_boundary_conditions`
-   modifies boundary conditions for inter-rank communication, adding overhead to halo fills
+### The pressure solver is NOT the issue
 
-The non-distributed script (`supercell_benchmark.jl` / `diagnose_performance.jl`) uses
-`GPU()` directly and achieves 0.61 s — matching Perlmutter exactly.
+Both distributed and non-distributed models use the same `FourierTridiagonalPoissonSolver`
+(not `DistributedFourierTridiagonalPoissonSolver`). The Breeze dispatch in
+`dynamics_pressure_solver()` creates a regular solver on the local grid.
+
+### The real bottleneck: cumulative GPU sync stalls in time-stepping
+
+92% of the overhead is NOT in the solver or isolated halo fills. It's in the
+**cumulative `sync_device!` (CUDA.synchronize) calls** scattered throughout the
+distributed time-stepping code.
+
+On a `DistributedGrid`, even with 1 rank, each time step triggers:
+
+1. **`update_state!`** calls `fill_halo_regions!(prognostic_fields, async=true)`
+2. **`compute_velocities!`** calls `fill_halo_regions!` 3 times (density, momentum, velocities)
+   - Each call triggers `fill_corners!` which calls `sync_device!(arch)`
+   - `sync_device!` on Distributed GPU = `CUDA.synchronize()` = flush GPU pipeline
+3. **`compute_pressure_correction!`** calls `fill_halo_regions!` twice more
+4. Per stage total: ~5+ `sync_device!` calls × 3 RK3 stages × 10 timesteps = **150+ GPU syncs**
+
+In isolation, `CUDA.synchronize()` costs only 1.5 μs. But in the actual time step, each
+sync **interrupts a stream of async GPU kernel launches**, forcing the GPU to drain its
+pipeline before proceeding. This breaks the GPU's ability to overlap kernel execution
+and memory transfers, causing massive throughput loss.
+
+The non-distributed code path has NO `sync_device!` calls in halo fills (no corners to
+communicate), so the GPU pipeline runs uninterrupted.
 
 ### The weak scaling issue: 2+ GPUs are 3x slower than 1 GPU (distributed)
 
