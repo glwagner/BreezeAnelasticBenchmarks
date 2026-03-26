@@ -199,11 +199,48 @@ ERF uses 400×400×80 on 2 nodes (8 GPUs).
 | 16   | 4     | 8×2       | 2.031 s | 27%         | 79%         |
 | 32   | 8     | 16×2      | 2.918 s | 19%         | 55%         |
 
-Notes:
-- Ry=2 at 2 GPUs achieves 71% efficiency — the y-decomposition avoids MPI transposes
-  in the pressure solver (y is local for Ry≤1 in slab-x, but Ry=2 uses pencil decomposition).
-- Ry=1 at 4 GPUs (57%) is the sweet spot for x-only intra-node.
-- Multi-node scaling from 8→40 GPUs (Ry=1) maintains 79% relative efficiency.
+#### Weak scaling — ERF-equivalent (compressible, no Poisson solve, Centered(2), ScalarDiffusivity, halo=1)
+
+Same physics as the ERF-like anelastic case, but using `CompressibleDynamics()` with fully
+explicit time stepping. No pressure Poisson solve — pressure is diagnostic from the equation
+of state. This eliminates the distributed FFT transposes entirely.
+
+**Ry=1 (x-only partition, 50×400×80 per GPU, NT=100)**
+
+| GPUs | Nodes | ms/step | Eff vs 1 GPU | Eff vs 8 GPU |
+|------|-------|---------|-------------|-------------|
+| 1    | 1     | 4.4     | 100%        | —           |
+| 2    | 1     | 62.7    | 7%          | —           |
+| 4    | 1     | 72.0    | 6%          | —           |
+| 8    | 2     | 95.4    | 5%          | 100%        |
+| 16   | 4     | 110.1   | 4%          | 87%         |
+| 20   | 5     | 123.7   | 4%          | 77%         |
+| 40   | 10    | 137.4   | 3%          | 69%         |
+
+The compressible case is extremely fast per step (4.4 ms) since it avoids the Poisson solve,
+but has the worst scaling efficiency because the fixed MPI overhead (halo communication)
+dominates the small per-step compute. Multi-node relative scaling (8→40 GPUs) is 69%.
+
+#### All three dynamics compared (NT=100, 50×400×80/GPU, Ry=1)
+
+| GPUs | Nodes | WENO5 anelastic | ERF anelastic | Compressible |
+|------|-------|----------------|--------------|-------------|
+| 1    | 1     | 95.9 ms/step   | 51.2 ms/step | 4.4 ms/step |
+| 2    | 1     | 462.2          | 137.0        | 62.7        |
+| 4    | 1     | 491.6          | 140.5        | 72.0        |
+| 8    | 2     | 666.6          | 172.4        | 95.4        |
+| 16   | 4     | 765.9          | 180.6        | 110.1       |
+| 20   | 5     | 803.3          | 204.9        | 123.7       |
+| 40   | 10    | —              | 233.3        | 137.4       |
+
+![Scaling results](scaling_results.png)
+
+#### Notes
+
+- Ry=1 at 4 GPUs (57%) is the sweet spot for x-only intra-node for anelastic.
+- Multi-node scaling from 8→40 GPUs (Ry=1) maintains 69-79% relative efficiency.
+- The 1→2 GPU jump is large for all cases due to distributed infrastructure overhead.
+- Single-GPU Float32 vs Float64 results pending.
 
 ## Optimizations
 
