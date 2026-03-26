@@ -59,31 +59,34 @@ ax2 = Axis(fig[1, 2],
            ylabel = "Weak scaling efficiency (%)",
            title = "Efficiency vs 2 nodes (8 GPUs)",
            xscale = log2,
-           xticks = [1, 2, 4, 8, 16, 20, 40],
+           xticks = [8, 16, 20, 40],
            xminorticksvisible = false,
-           limits = (nothing, (0, 110)))
+           limits = ((6, 50), (0, 110)))
 
 hlines!(ax2, [100], color = :gray70, linestyle = :dash, linewidth = 1, label = "Ideal")
 
-# Baseline: 8 GPUs (2 nodes) = index 4 for WENO5, index 4 for ERF, index 4 for comp
+# Baseline: 8 GPUs (2 nodes). Only plot 8+ GPUs.
 weno_8gpu_idx = findfirst(==(8), weno_gpus)
 erf_8gpu_idx  = findfirst(==(8), erf_gpus)
 comp_8gpu_idx = findfirst(==(8), comp_gpus)
 
-weno_eff = 100 .* weno_ms[weno_8gpu_idx] ./ weno_ms
-scatter!(ax2, weno_gpus, weno_eff, color = :purple, marker = :diamond, markersize = 12,
+weno_multi = weno_gpus[weno_8gpu_idx:end]
+weno_eff   = 100 .* weno_ms[weno_8gpu_idx] ./ weno_ms[weno_8gpu_idx:end]
+scatter!(ax2, weno_multi, weno_eff, color = :purple, marker = :diamond, markersize = 12,
          label = "WENO5 anelastic")
-lines!(ax2, weno_gpus, weno_eff, color = :purple, linewidth = 2)
+lines!(ax2, weno_multi, weno_eff, color = :purple, linewidth = 2)
 
-erf_eff = 100 .* erf_ms[erf_8gpu_idx] ./ erf_ms
-scatter!(ax2, erf_gpus, erf_eff, color = :dodgerblue, marker = :circle, markersize = 12,
+erf_multi = erf_gpus[erf_8gpu_idx:end]
+erf_eff   = 100 .* erf_ms[erf_8gpu_idx] ./ erf_ms[erf_8gpu_idx:end]
+scatter!(ax2, erf_multi, erf_eff, color = :dodgerblue, marker = :circle, markersize = 12,
          label = "ERF-like anelastic")
-lines!(ax2, erf_gpus, erf_eff, color = :dodgerblue, linewidth = 2)
+lines!(ax2, erf_multi, erf_eff, color = :dodgerblue, linewidth = 2)
 
-comp_eff = 100 .* comp_ms[comp_8gpu_idx] ./ comp_ms
-scatter!(ax2, comp_gpus, comp_eff, color = :seagreen, marker = :utriangle, markersize = 12,
+comp_multi = comp_gpus[comp_8gpu_idx:end]
+comp_eff   = 100 .* comp_ms[comp_8gpu_idx] ./ comp_ms[comp_8gpu_idx:end]
+scatter!(ax2, comp_multi, comp_eff, color = :seagreen, marker = :utriangle, markersize = 12,
          label = "Compressible")
-lines!(ax2, comp_gpus, comp_eff, color = :seagreen, linewidth = 2)
+lines!(ax2, comp_multi, comp_eff, color = :seagreen, linewidth = 2)
 
 vlines!(ax2, [4], color = :gray80, linestyle = :dashdot, linewidth = 0.8)
 vlines!(ax2, [8], color = :gray80, linestyle = :dashdot, linewidth = 0.8)
