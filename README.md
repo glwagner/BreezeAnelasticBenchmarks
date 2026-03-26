@@ -167,29 +167,23 @@ Single-GPU performance matches Perlmutter despite
 | 8    | 2     | 8×1       | 7.483 s | 7.714 s | 12%         | 100%          |
 | 16   | 4     | 16×1      | 10.295 s| 10.291 s| 9%          | 75%           |
 
-#### Weak scaling — ERF-equivalent (200×200×80 per GPU, Centered(2), ScalarDiffusivity, halo=1)
+#### Weak scaling — ERF-equivalent (anelastic, Centered(2), ScalarDiffusivity, halo=1)
 
-| GPUs | Nodes | Partition | Trial 1 | Trial 2 | Eff vs 1 GPU | Eff vs 2 nodes |
-|------|-------|-----------|---------|---------|-------------|---------------|
-| 1    | 1     | 1×1       | 0.655 s | 0.570 s | 100%        | —             |
-| 2    | 1     | 2×1       | 3.181 s | 3.557 s | 16%         | —             |
-| 4    | 1     | 4×1       | 3.053 s | 3.104 s | 18%         | —             |
-| 8    | 2     | 8×1       | 4.088 s | 3.144 s | 18%         | 100%          |
-| 16   | 4     | 2×8       | 5.760 s | 5.998 s | 10%         | 52%           |
+ERF uses 400×400×80 on 2 nodes (8 GPUs). Per-GPU grid depends on partition:
+- Ry=1 (x-only): 50×400×80 per GPU
+- Ry=2: 100×200×80 per GPU
 
-Additional results with Ry=2 and higher node counts pending.
+Results with 200×200×80 per GPU (preliminary, being re-run with correct per-GPU sizes):
 
-#### Weak scaling — ERF-equivalent with optimizations (200×200×80 per GPU, x-only partition)
+| GPUs | Nodes | Partition | Trial 2 | Before opts | Speedup |
+|------|-------|-----------|---------|-------------|---------|
+| 1    | 1     | 1×1       | 0.651 s | 0.570 s     | —       |
+| 2    | 1     | 2×1       | 1.318 s | 3.557 s     | 2.7x    |
+| 4    | 1     | 4×1       | 1.545 s | 3.104 s     | 2.0x    |
+| 8    | 2     | 8×1       | 2.598 s | 3.144 s     | 1.2x    |
+| 40   | 10    | 40×1      | 2.946 s | 5.842 s     | 2.0x    |
 
-After applying all Oceananigans and Breeze optimizations (see below):
-
-| GPUs | Nodes | Trial 2 | Before opts | Speedup | Eff vs 1 GPU | Eff vs 2 nodes |
-|------|-------|---------|-------------|---------|-------------|---------------|
-| 1    | 1     | 0.651 s | 0.570 s     | —       | 100%        | —             |
-| 2    | 1     | 1.318 s | 3.557 s     | 2.7x    | 49%         | —             |
-| 4    | 1     | 1.545 s | 3.104 s     | 2.0x    | 42%         | —             |
-| 8    | 2     | 2.598 s | 3.144 s     | 1.2x    | 25%         | 100%          |
-| 40   | 10    | 2.946 s | 5.842 s     | 2.0x    | 22%         | 88%           |
+New runs with correct ERF per-GPU sizes (Ry=1 and Ry=2) pending.
 
 ## Optimizations
 

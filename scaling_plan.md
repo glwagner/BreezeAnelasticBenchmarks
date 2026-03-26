@@ -1,16 +1,23 @@
 # Scaling Performance Plan
 
-## Current Status (2026-03-26)
+## Current Status (2026-03-26, updated)
 
-### Performance Summary
+### Optimizations applied
 
-| Config | Perlmutter | Derecho | Notes |
-|--------|-----------|---------|-------|
-| 1 GPU, non-distributed | 0.61 s | 0.61 s | Identical |
-| 1 GPU, distributed | 0.64 s | 2.6 s | **4x regression on Derecho** |
-| 2 GPU, distributed | pending | 7.6 s | |
-| 4 GPU, distributed | pending | 6.8 s | |
-| 8 GPU, distributed | pending | 6.8 s | (missing pool=none run) |
+Four optimizations on Oceananigans `glw/optimize-distributed-solver` + Breeze `glw/distributed-tests`:
+1. `fill_corners!` early return (no-corner case)
+2. Periodic y-FFT along dim 2 (skip permutedims)
+3. Slab-x tridiagonal in x-local space (4→2 transposes)
+4. `Alltoall` instead of `Alltoallv` (28x faster on GPU)
+Plus redundant halo fill removal in Breeze (3 per RK3 stage).
+
+### Pressure solver isolated benchmark (optimized)
+
+| GPUs | Baseline | Optimized | Speedup |
+|------|----------|-----------|---------|
+| 1    | 7.9 ms/solve | 8.4 ms/solve | — |
+| 2    | 129.5 ms/solve | 36.2 ms/solve | 3.6x |
+| 4    | 109.6 ms/solve | 37.7 ms/solve | 2.9x |
 
 ### Root Cause Analysis
 
@@ -115,11 +122,54 @@ Possible fixes (in order of likelihood):
    - Acceptable: <20% overhead at 64 GPUs
    - Report: time per timestep, communication fraction, scaling efficiency
 
-### Phase 5: Documentation and comparison
+### Phase 5: ERF comparison with corrected grid sizes
+
+ERF uses 400×400×80 on 2 nodes (8 GPUs). The per-GPU grid depends on partition:
+
+**Ry=1 (x-only partition):**
+- Per GPU: 50×400×80
+- Weak scaling: Nx = 50 × Ngpus, Ny = 400
+- Constraint: Ny % Rx = 400 % Ngpus = 0 → Ngpus must divide 400
+
+| GPUs | Nodes | Grid | Partition |
+|------|-------|------|-----------|
+| 1 | 1 | 50×400×80 | 1×1 |
+| 2 | 1 | 100×400×80 | 2×1 |
+| 4 | 1 | 200×400×80 | 4×1 |
+| 8 | 2 | 400×400×80 | 8×1 |
+| 16 | 4 | 800×400×80 | 16×1 |
+| 20 | 5 | 1000×400×80 | 20×1 |
+| 40 | 10 | 2000×400×80 | 40×1 |
+
+**Ry=2 partition:**
+- Per GPU: 100×200×80
+- Weak scaling: Nx = 100 × Rx, Ny = 200 × Ry = 400
+- Constraint: Ny_global % Rx = 400 % Rx = 0
+
+| GPUs | Nodes | Grid | Partition |
+|------|-------|------|-----------|
+| 2 | 1 | 100×400×80 | 1×2 |
+| 4 | 1 | 200×400×80 | 2×2 |
+| 8 | 2 | 400×400×80 | 4×2 |
+| 16 | 4 | 800×400×80 | 8×2 |
+| 32 | 8 | 1600×400×80 | 16×2 |
+
+Also run single-GPU reference at 400×400×80 for direct comparison with ERF 2-node result.
+
+Submit via:
+```bash
+# Ry=1
+qsub -v NGPUS=N,PARTITION_X_ONLY=1,NX_PER_GPU=50,NY_PER_GPU=400 -l select=... benchmarks/derecho_distributed_supercell_erf_benchmark.sh
+
+# Ry=2
+qsub -v NGPUS=N,RX=Rx,RY=2,NX_PER_GPU=100,NY_PER_GPU=200 -l select=... benchmarks/derecho_distributed_supercell_erf_benchmark.sh
+```
+
+### Phase 6: Documentation and comparison
 
 1. Complete Perlmutter distributed benchmarks (when account hours available)
-2. Update README with full scaling curves
-3. Final performance report comparing both systems
+2. Update README with full scaling curves for both Ry=1 and Ry=2
+3. Final performance report comparing both systems and both partitions
 
 ## Key Files
 

@@ -24,7 +24,8 @@ function compute_partition(Ngpus)
         Ngpus % Ry != 0 && continue
         80 % Ry != 0 && continue  # Nz must be divisible by Ry
         Rx = Ngpus ÷ Ry
-        (200 * Ry) % Rx != 0 && continue  # Ny_global must be divisible by Rx
+        Ny_g = parse(Int, get(ENV, "NY_PER_GPU", "200")) * Ry
+        Ny_g % Rx != 0 && continue  # Ny_global must be divisible by Rx
         return Rx, Ry
     end
     return Ngpus, 1  # fallback to x-only
@@ -41,10 +42,11 @@ end
 
 arch = Distributed(GPU(); partition = Partition(Rx, Ry))
 
-Nx_per_gpu = 200
-Ny_per_gpu = 200
-Lx_per_gpu = 84kilometers
-Ly_per_gpu = 84kilometers
+# Per-GPU grid size (configurable via environment variables)
+Nx_per_gpu = parse(Int, get(ENV, "NX_PER_GPU", "200"))
+Ny_per_gpu = parse(Int, get(ENV, "NY_PER_GPU", "200"))
+Lx_per_gpu = Nx_per_gpu / 200 * 84kilometers
+Ly_per_gpu = Ny_per_gpu / 200 * 84kilometers
 
 Nx = Nx_per_gpu * Rx
 Ny = Ny_per_gpu * Ry
