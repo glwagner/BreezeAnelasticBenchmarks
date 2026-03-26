@@ -12,7 +12,7 @@ module load ncarenv nvhpc cuda cray-mpich
 export MPICH_GPU_SUPPORT_ENABLED=1
 export JULIA_MPI_HAS_CUDA=true
 export PALS_TRANSFER=false
-export JULIA_CUDA_MEMORY_POOL=none
+# Note: do NOT set JULIA_CUDA_MEMORY_POOL=none — the default binned pool is fine
 
 FLOAT_TYPE="${FLOAT_TYPE:-Float32}"
 

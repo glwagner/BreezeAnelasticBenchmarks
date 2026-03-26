@@ -131,9 +131,7 @@ branch, which includes fixes for distributed anelastic simulations
 
 ## Results
 
-Both systems use NVIDIA A100-SXM4-80GB GPUs.
-
-### Perlmutter (NERSC) — Julia 1.12.1
+### Perlmutter (NERSC) — NVIDIA A100-SXM4-80GB, Julia 1.12.1
 
 #### Single GPU
 
@@ -144,18 +142,36 @@ Both systems use NVIDIA A100-SXM4-80GB GPUs.
 
 #### Weak scaling (Float32)
 
-Results pending.
+Results pending (account out of hours).
 
-### Derecho (NCAR) — Julia 1.12.5
+### Derecho (NCAR) — NVIDIA A100-SXM4-40GB, Julia 1.12.5
 
-#### Weak scaling (Float32)
+#### Single GPU (non-distributed)
+
+| Memory Pool | Trial 1 | Trial 2 | Trial 3 |
+|-------------|---------|---------|---------|
+| default     | 0.614 s | 0.615 s | 0.615 s |
+| none        | 0.635 s | 0.620 s | 0.615 s |
+| cuda        | 0.614 s | 0.618 s | 0.615 s |
+
+Single-GPU performance matches Perlmutter despite
+40GB vs 80GB memory (1,555 vs 2,039 GB/s bandwidth).
+
+#### Weak scaling (Float32, distributed)
 
 | GPUs | Nodes | Trial 1 | Trial 2 |
 |------|-------|---------|---------|
-| 1    | 1     | 2.595 s | 2.669 s |
-| 2    | 1     | 7.959 s | 7.475 s |
-| 4    | 1     | 7.234 s | 7.642 s |
-| 8    | 2     | 6.867 s | 7.127 s |
+| 1    | 1     | 2.608 s | 2.583 s |
+| 2    | 1     | 7.901 s | 7.623 s |
+| 4    | 1     | 7.011 s | 6.759 s |
+| 8    | 2     | 7.166 s | 6.835 s |
+
+**Known issue:** The `Distributed` code path adds ~4x overhead even
+on a single GPU (2.6 s vs 0.61 s). This overhead likely comes from
+the `DistributedFourierTridiagonalPoissonSolver` and halo communication
+infrastructure. Multi-GPU runs show an additional ~3x overhead (7 s vs 2.6 s)
+from inter-GPU communication. Scaling from 4→8 GPUs across nodes is good.
+See [`perlmutter_vs_derecho.md`](perlmutter_vs_derecho.md) for detailed analysis.
 
 ## References
 
