@@ -173,17 +173,37 @@ ERF uses 400×400×80 on 2 nodes (8 GPUs). Per-GPU grid depends on partition:
 - Ry=1 (x-only): 50×400×80 per GPU
 - Ry=2: 100×200×80 per GPU
 
-Results with 200×200×80 per GPU (preliminary, being re-run with correct per-GPU sizes):
+ERF uses 400×400×80 on 2 nodes (8 GPUs).
 
-| GPUs | Nodes | Partition | Trial 2 | Before opts | Speedup |
-|------|-------|-----------|---------|-------------|---------|
-| 1    | 1     | 1×1       | 0.651 s | 0.570 s     | —       |
-| 2    | 1     | 2×1       | 1.318 s | 3.557 s     | 2.7x    |
-| 4    | 1     | 4×1       | 1.545 s | 3.104 s     | 2.0x    |
-| 8    | 2     | 8×1       | 2.598 s | 3.144 s     | 1.2x    |
-| 40   | 10    | 40×1      | 2.946 s | 5.842 s     | 2.0x    |
+**1-GPU reference at 400×400×80: 0.614 s (61.4 ms/step)**
 
-New runs with correct ERF per-GPU sizes (Ry=1 and Ry=2) pending.
+**Ry=1 (x-only partition, 50×400×80 per GPU)**
+
+| GPUs | Nodes | Partition | Trial 2 | Eff vs 1 GPU | Eff vs 8 GPU |
+|------|-------|-----------|---------|-------------|-------------|
+| 1    | 1     | 1×1       | 0.547 s | 100%        | —           |
+| 2    | 1     | 2×1       | 1.313 s | 42%         | —           |
+| 4    | 1     | 4×1       | 0.965 s | 57%         | —           |
+| 8    | 2     | 8×1       | 1.855 s | 29%         | 100%        |
+| 16   | 4     | 16×1      | 1.707 s | 32%         | 109%        |
+| 20   | 5     | 20×1      | 2.197 s | 25%         | 84%         |
+| 40   | 10    | 40×1      | 2.363 s | 23%         | 79%         |
+
+**Ry=2 partition (100×200×80 per GPU)**
+
+| GPUs | Nodes | Partition | Trial 2 | Eff vs 1 GPU | Eff vs 8 GPU |
+|------|-------|-----------|---------|-------------|-------------|
+| 2    | 1     | 1×2       | 0.774 s | 71%         | —           |
+| 4    | 1     | 2×2       | 1.375 s | 40%         | —           |
+| 8    | 2     | 4×2       | 1.606 s | 34%         | 100%        |
+| 16   | 4     | 8×2       | 2.031 s | 27%         | 79%         |
+| 32   | 8     | 16×2      | 2.918 s | 19%         | 55%         |
+
+Notes:
+- Ry=2 at 2 GPUs achieves 71% efficiency — the y-decomposition avoids MPI transposes
+  in the pressure solver (y is local for Ry≤1 in slab-x, but Ry=2 uses pencil decomposition).
+- Ry=1 at 4 GPUs (57%) is the sweet spot for x-only intra-node.
+- Multi-node scaling from 8→40 GPUs (Ry=1) maintains 79% relative efficiency.
 
 ## Optimizations
 
