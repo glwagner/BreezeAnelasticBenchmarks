@@ -1,9 +1,9 @@
 [MPIPreferences]
-_format = "1.1"
-abi = "MPICH"
+__clear__ = ["preloads_env_switch"]
+_format = "1.0"
+abi = "OpenMPI"
 binary = "system"
 cclibs = []
-libmpi = "libmpi_cray"
+libmpi = "libmpi"
 mpiexec = "mpiexec"
-preloads = ["/opt/cray/pe/mpich/default/gtl/lib/libmpi_gtl_cuda.so"]
-preloads_env_switch = "MPICH_GPU_SUPPORT_ENABLED"
+preloads = []
