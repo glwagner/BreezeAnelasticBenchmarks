@@ -10,6 +10,13 @@ using BreezeAnelasticBenchmarks
 using Oceananigans.Units
 using Printf
 
+use_nccl = "--nccl" in ARGS
+if use_nccl
+    using NCCL
+    using Oceananigans.DistributedComputations
+    const NCCLDistributed = Base.get_extension(Oceananigans, :OceananigansNCCLExt).NCCLDistributed
+end
+
 FT = if "--float-type" in ARGS
     i = findfirst(==("--float-type"), ARGS)
     Dict("Float32" => Float32, "Float64" => Float64)[ARGS[i+1]]
@@ -19,7 +26,11 @@ end
 
 Ngpus = MPI.Comm_size(MPI.COMM_WORLD)
 rank  = MPI.Comm_rank(MPI.COMM_WORLD)
-arch  = Distributed(GPU(); partition = Partition(Ngpus, 1))
+arch = if use_nccl
+    NCCLDistributed(GPU(); partition = Partition(Ngpus, 1))
+else
+    Distributed(GPU(); partition = Partition(Ngpus, 1))
+end
 
 Nx_per_gpu = parse(Int, get(ENV, "NX_PER_GPU", "400"))
 Ny = parse(Int, get(ENV, "NY_PER_GPU", "400"))
@@ -27,7 +38,8 @@ Lx_per_gpu = Nx_per_gpu / 400 * 168kilometers
 Ly = Ny / 400 * 168kilometers
 
 if rank == 0
-    println("Weak scaling benchmark: Ngpus=$Ngpus FT=$FT Nx_per_gpu=$Nx_per_gpu Ny=$Ny")
+    comm_backend = use_nccl ? "NCCL" : "MPI"
+    println("Weak scaling benchmark ($comm_backend): Ngpus=$Ngpus FT=$FT Nx_per_gpu=$Nx_per_gpu Ny=$Ny")
 end
 
 model = setup_supercell(arch; FT,

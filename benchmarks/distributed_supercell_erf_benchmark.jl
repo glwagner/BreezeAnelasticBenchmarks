@@ -9,6 +9,13 @@ using BreezeAnelasticBenchmarks
 using Oceananigans.Units
 using Printf
 
+use_nccl = "--nccl" in ARGS
+if use_nccl
+    using NCCL
+    using Oceananigans.DistributedComputations
+    const NCCLDistributed = Base.get_extension(Oceananigans, :OceananigansNCCLExt).NCCLDistributed
+end
+
 FT = if "--float-type" in ARGS
     i = findfirst(==("--float-type"), ARGS)
     Dict("Float32" => Float32, "Float64" => Float64)[ARGS[i+1]]
@@ -44,7 +51,11 @@ else
     Rx, Ry = compute_partition(Ngpus)
 end
 
-arch = Distributed(GPU(); partition = Partition(Rx, Ry))
+arch = if use_nccl
+    NCCLDistributed(GPU(); partition = Partition(Rx, Ry))
+else
+    Distributed(GPU(); partition = Partition(Rx, Ry))
+end
 
 # Per-GPU grid size (configurable via environment variables)
 Nx_per_gpu = parse(Int, get(ENV, "NX_PER_GPU", "200"))
@@ -58,7 +69,8 @@ Lx = Lx_per_gpu * Rx
 Ly = Ly_per_gpu * Ry
 
 if rank == 0
-    println("ERF-equivalent weak scaling benchmark: Ngpus=$Ngpus Rx=$Rx Ry=$Ry FT=$FT Nx=$Nx Ny=$Ny Nx_per_gpu=$Nx_per_gpu Ny_per_gpu=$Ny_per_gpu")
+    comm_backend = use_nccl ? "NCCL" : "MPI"
+    println("ERF-equivalent weak scaling benchmark ($comm_backend): Ngpus=$Ngpus Rx=$Rx Ry=$Ry FT=$FT Nx=$Nx Ny=$Ny Nx_per_gpu=$Nx_per_gpu Ny_per_gpu=$Ny_per_gpu")
 end
 
 model = setup_supercell_erf(arch; FT, Nx, Ny, Lx, Ly)

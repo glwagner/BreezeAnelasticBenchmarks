@@ -27,7 +27,10 @@ export JULIA_CUDA_MEMORY_POOL=none
 
 NGPUS="${NGPUS:-1}"
 FLOAT_TYPE="${FLOAT_TYPE:-Float32}"
-export NT="${NT:-10}"
+export NT="${NT:-100}"
+
+NCCL_FLAG=""
+[ "${USE_NCCL:-0}" = "1" ] && NCCL_FLAG="--nccl"
 
 srun --ntasks="${NGPUS}" --gpus="${NGPUS}" --gpu-bind=none \
-    julia --project=. benchmarks/distributed_supercell_benchmark.jl --float-type "$FLOAT_TYPE"
+    julia --project=. benchmarks/distributed_supercell_benchmark.jl --float-type "$FLOAT_TYPE" $NCCL_FLAG
