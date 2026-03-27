@@ -146,26 +146,30 @@ Results pending (account out of hours).
 
 ### Derecho (NCAR) — NVIDIA A100-SXM4-40GB, Julia 1.12.5
 
-#### Single GPU (non-distributed)
+#### Single GPU (NT=100, non-distributed)
 
-| Memory Pool | Trial 1 | Trial 2 | Trial 3 |
-|-------------|---------|---------|---------|
-| default     | 0.614 s | 0.615 s | 0.615 s |
-| none        | 0.635 s | 0.620 s | 0.615 s |
-| cuda        | 0.614 s | 0.618 s | 0.615 s |
+| Config | Float32 (ms/step) | Float64 (ms/step) | F64/F32 ratio |
+|--------|-------------------|-------------------|---------------|
+| WENO5 + Kessler (400×400×80) | 95.4 | 148.5 | 1.56x |
+| Centered(2) + diffusion, anelastic (50×400×80) | 53.7 | 64.9 | 1.21x |
+| Centered(2) + diffusion, compressible (50×400×80) | 5.2 | 5.4 | 1.04x |
 
 Single-GPU performance matches Perlmutter despite
 40GB vs 80GB memory (1,555 vs 2,039 GB/s bandwidth).
 
-#### Weak scaling — WENO5 supercell (400×400×80 per GPU, halo=5, x-only partition)
+#### Weak scaling — WENO5 supercell (400×400×80 per GPU, halo=5, x-only, Float32, NT=100)
 
-| GPUs | Nodes | Partition | Trial 1 | Trial 2 | Eff vs 1 GPU | Eff vs 2 nodes |
-|------|-------|-----------|---------|---------|-------------|---------------|
-| 1    | 1     | 1×1       | 0.887 s | 0.940 s | 100%        | —             |
-| 2    | 1     | 2×1       | 7.655 s | 7.711 s | 12%         | —             |
-| 4    | 1     | 4×1       | 7.106 s | 6.743 s | 14%         | —             |
-| 8    | 2     | 8×1       | 7.483 s | 7.714 s | 12%         | 100%          |
-| 16   | 4     | 16×1      | 10.295 s| 10.291 s| 9%          | 75%           |
+With all Oceananigans optimizations applied:
+
+| GPUs | Nodes | ms/step | Eff vs 1 GPU | Eff vs 8 GPU |
+|------|-------|---------|-------------|-------------|
+| 1    | 1     | 95.9    | 100%        | —           |
+| 2    | 1     | 462.2   | 21%         | —           |
+| 4    | 1     | 491.6   | 20%         | —           |
+| 8    | 2     | 666.6   | 14%         | 100%        |
+| 16   | 4     | 765.9   | 13%         | 87%         |
+| 20   | 5     | 803.3   | 12%         | 83%         |
+| 40   | 10    | pending | —           | —           |
 
 #### Weak scaling — ERF-equivalent (anelastic, Centered(2), ScalarDiffusivity, halo=1)
 

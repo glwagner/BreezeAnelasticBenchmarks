@@ -4,9 +4,9 @@ using CairoMakie
 # Data: NT=100 steps, all optimized, 50×400×80/GPU, Ry=1 (x-only)
 # ============================================================
 
-# WENO5 (400×400×80/GPU, WENO5+Kessler, halo=5)
+# WENO5 (400×400×80/GPU, WENO5+Kessler, halo=5) — optimized
 weno_gpus  = [1,    2,     4,     8,     16,    20]
-weno_ms    = [95.9, 462.2, 491.6, 666.6, 765.9, 803.3]
+weno_ms    = [95.4, 462.2, 491.6, 666.6, 765.9, 803.3]
 
 # ERF anelastic (50×400×80/GPU, Centered(2)+ScalarDiffusivity, halo=1)
 erf_gpus   = [1,    2,     4,     8,     16,    20,    40]
