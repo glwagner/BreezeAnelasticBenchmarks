@@ -2,21 +2,32 @@
 #SBATCH --job-name=supercell-weak
 #SBATCH --account=m5176_g
 #SBATCH --constraint=gpu
-#SBATCH --qos=debug
+#SBATCH --qos=regular
 #SBATCH --cpus-per-task=32
-#SBATCH --time=00:30:00
+#SBATCH --time=01:00:00
 #SBATCH --output=distributed_supercell_benchmark-%j.out
 #SBATCH --error=distributed_supercell_benchmark-%j.err
 
-# Pass --nodes on the sbatch command line, e.g.:
-#   NGPUS=4 sbatch --nodes=1 benchmarks/distributed_supercell_benchmark.sh
-#   NGPUS=8 sbatch --nodes=2 benchmarks/distributed_supercell_benchmark.sh
-# (Perlmutter has 4 A100 GPUs per node)
+# WENO5 weak scaling: 400×400×80 per GPU, halo=(5,5,5), x-partition.
+#
+# Usage (pass --nodes and NGPUS on sbatch command line):
+#   NGPUS=1  sbatch --nodes=1  benchmarks/distributed_supercell_benchmark.sh
+#   NGPUS=4  sbatch --nodes=1  benchmarks/distributed_supercell_benchmark.sh
+#   NGPUS=8  sbatch --nodes=2  benchmarks/distributed_supercell_benchmark.sh
+#   NGPUS=16 sbatch --nodes=4  benchmarks/distributed_supercell_benchmark.sh
+#   NGPUS=32 sbatch --nodes=8  benchmarks/distributed_supercell_benchmark.sh
+#   NGPUS=64 sbatch --nodes=16 benchmarks/distributed_supercell_benchmark.sh
+#
+# Perlmutter has 4 A100-80GB GPUs per node.
 
 module load julia/1.12.1
 
-NGPUS="${NGPUS:-2}"
-FLOAT_TYPE="${FLOAT_TYPE:-Float32}"
+export MPICH_GPU_SUPPORT_ENABLED=1
+export JULIA_CUDA_MEMORY_POOL=none
 
-srun --ntasks="${NGPUS}" --gpus="${NGPUS}" \
+NGPUS="${NGPUS:-1}"
+FLOAT_TYPE="${FLOAT_TYPE:-Float32}"
+export NT="${NT:-10}"
+
+srun --ntasks="${NGPUS}" --gpus="${NGPUS}" --gpu-bind=none \
     julia --project=. benchmarks/distributed_supercell_benchmark.jl --float-type "$FLOAT_TYPE"

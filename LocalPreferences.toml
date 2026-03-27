@@ -2,8 +2,8 @@
 _format = "1.1"
 abi = "MPICH"
 binary = "system"
-cclibs = ["pmi", "pmi2", "pthread", "pals", "rt", "pthread", "pmi", "pmi2"]
-libmpi = "libmpi_nvidia.so"
+cclibs = []
+libmpi = "libmpi_cray"
 mpiexec = "mpiexec"
-preloads = ["libmpi_gtl_cuda.so"]
+preloads = ["/opt/cray/pe/mpich/default/gtl/lib/libmpi_gtl_cuda.so"]
 preloads_env_switch = "MPICH_GPU_SUPPORT_ENABLED"

@@ -1,3 +1,7 @@
+# Suppress "malformed environment entry" warnings from Cray MPICH multi-node runs
+using Logging
+disable_logging(Logging.Warn)
+
 using MPI
 MPI.Init()
 
@@ -54,7 +58,7 @@ Lx = Lx_per_gpu * Rx
 Ly = Ly_per_gpu * Ry
 
 if rank == 0
-    @info "ERF-equivalent weak scaling benchmark" Ngpus Rx Ry FT Nx Ny Nx_per_gpu Ny_per_gpu
+    println("ERF-equivalent weak scaling benchmark: Ngpus=$Ngpus Rx=$Rx Ry=$Ry FT=$FT Nx=$Nx Ny=$Ny Nx_per_gpu=$Nx_per_gpu Ny_per_gpu=$Ny_per_gpu")
 end
 
 model = setup_supercell_erf(arch; FT, Nx, Ny, Lx, Ly)
@@ -74,7 +78,7 @@ elapsed3 = @elapsed run_benchmark!(model, Nt)
 MPI.Barrier(MPI.COMM_WORLD)
 
 if rank == 0
-    @info @sprintf("Nt=%d  Warmup:  %.3f seconds (%.1f ms/step)", Nt, elapsed1, 1000elapsed1/Nt)
-    @info @sprintf("Nt=%d  Trial 1: %.3f seconds (%.1f ms/step)", Nt, elapsed2, 1000elapsed2/Nt)
-    @info @sprintf("Nt=%d  Trial 2: %.3f seconds (%.1f ms/step)", Nt, elapsed3, 1000elapsed3/Nt)
+    @printf("Nt=%d  Warmup:  %.3f seconds (%.1f ms/step)\n", Nt, elapsed1, 1000elapsed1/Nt)
+    @printf("Nt=%d  Trial 1: %.3f seconds (%.1f ms/step)\n", Nt, elapsed2, 1000elapsed2/Nt)
+    @printf("Nt=%d  Trial 2: %.3f seconds (%.1f ms/step)\n", Nt, elapsed3, 1000elapsed3/Nt)
 end

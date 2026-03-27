@@ -1,3 +1,7 @@
+# Suppress "malformed environment entry" warnings from Cray MPICH multi-node runs
+using Logging
+disable_logging(Logging.Warn)
+
 using MPI
 MPI.Init()
 
@@ -23,7 +27,7 @@ Lx_per_gpu = Nx_per_gpu / 400 * 168kilometers
 Ly = Ny / 400 * 168kilometers
 
 if rank == 0
-    @info "Weak scaling benchmark" Ngpus FT Nx_per_gpu Ny
+    println("Weak scaling benchmark: Ngpus=$Ngpus FT=$FT Nx_per_gpu=$Nx_per_gpu Ny=$Ny")
 end
 
 model = setup_supercell(arch; FT,
@@ -47,7 +51,7 @@ elapsed3 = @elapsed run_benchmark!(model, Nt)
 MPI.Barrier(MPI.COMM_WORLD)
 
 if rank == 0
-    @info @sprintf("Nt=%d  Warmup:  %.3f seconds (%.1f ms/step)", Nt, elapsed1, 1000elapsed1/Nt)
-    @info @sprintf("Nt=%d  Trial 1: %.3f seconds (%.1f ms/step)", Nt, elapsed2, 1000elapsed2/Nt)
-    @info @sprintf("Nt=%d  Trial 2: %.3f seconds (%.1f ms/step)", Nt, elapsed3, 1000elapsed3/Nt)
+    @printf("Nt=%d  Warmup:  %.3f seconds (%.1f ms/step)\n", Nt, elapsed1, 1000elapsed1/Nt)
+    @printf("Nt=%d  Trial 1: %.3f seconds (%.1f ms/step)\n", Nt, elapsed2, 1000elapsed2/Nt)
+    @printf("Nt=%d  Trial 2: %.3f seconds (%.1f ms/step)\n", Nt, elapsed3, 1000elapsed3/Nt)
 end
