@@ -51,7 +51,7 @@ text!(ax1, 4.3, 2, text = "1 node", fontsize = 10, color = :gray50)
 vlines!(ax1, [8], color = :gray80, linestyle = :dashdot, linewidth = 0.8)
 text!(ax1, 8.5, 2, text = "2 nodes", fontsize = 10, color = :gray50)
 
-axislegend(ax1, position = :lt, framevisible = true, labelsize = 11)
+axislegend(ax1, position = :rb, framevisible = true, labelsize = 11)
 
 # --- Right panel: Efficiency ---
 ax2 = Axis(fig[1, 2],
@@ -61,7 +61,7 @@ ax2 = Axis(fig[1, 2],
            xscale = log2,
            xticks = [8, 16, 20, 40],
            xminorticksvisible = false,
-           limits = ((6, 50), (0, 110)))
+           limits = ((6, 50), (50, 110)))
 
 hlines!(ax2, [100], color = :gray70, linestyle = :dash, linewidth = 1, label = "Ideal")
 
@@ -91,7 +91,7 @@ lines!(ax2, comp_multi, comp_eff, color = :seagreen, linewidth = 2)
 vlines!(ax2, [4], color = :gray80, linestyle = :dashdot, linewidth = 0.8)
 vlines!(ax2, [8], color = :gray80, linestyle = :dashdot, linewidth = 0.8)
 
-axislegend(ax2, position = :rt, framevisible = true, labelsize = 11)
+axislegend(ax2, position = :rb, framevisible = true, labelsize = 11)
 
 save("scaling_results.png", fig, px_per_unit = 3)
 println("Saved scaling_results.png")
