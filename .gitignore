@@ -3,3 +3,4 @@
 *.o[0-9]*
 Manifest.toml
 launch.sh
+benchmarks/nccl_4gpu.nsys-rep benchmarks/nccl_4gpu_batched.nsys-rep benchmarks/nccl_4gpu_steady.nsys-rep
