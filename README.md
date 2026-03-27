@@ -2,7 +2,9 @@
 
 Weak-scaling GPU benchmarks for atmospheric supercell simulations
 built with [Breeze.jl](https://github.com/NumericalEarth/Breeze.jl)
+(branch [`glw/distributed-tests`](https://github.com/NumericalEarth/Breeze.jl/tree/glw/distributed-tests))
 and [Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl)
+(branch [`glw/optimize-distributed-solver`](https://github.com/CliMA/Oceananigans.jl/tree/glw/optimize-distributed-solver))
 on [NCAR Derecho](https://ncar-hpc-docs.readthedocs.io/en/latest/compute-systems/derecho/)
 (NVIDIA A100-SXM4-40GB GPUs, 4 per node, NVLink intra-node, Slingshot-11 inter-node).
 
