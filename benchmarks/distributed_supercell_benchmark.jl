@@ -17,17 +17,20 @@ Ngpus = MPI.Comm_size(MPI.COMM_WORLD)
 rank  = MPI.Comm_rank(MPI.COMM_WORLD)
 arch  = Distributed(GPU(); partition = Partition(Ngpus, 1))
 
-Nx_per_gpu = 400
-Lx_per_gpu = 168kilometers
+Nx_per_gpu = parse(Int, get(ENV, "NX_PER_GPU", "400"))
+Ny = parse(Int, get(ENV, "NY_PER_GPU", "400"))
+Lx_per_gpu = Nx_per_gpu / 400 * 168kilometers
+Ly = Ny / 400 * 168kilometers
 
 if rank == 0
-    @info "Weak scaling benchmark" Ngpus FT Nx_per_gpu
+    @info "Weak scaling benchmark" Ngpus FT Nx_per_gpu Ny
 end
 
 model = setup_supercell(arch; FT,
                          Nx = Nx_per_gpu * Ngpus,
-                         Ny = 400, Nz = 80,
-                         Lx = Lx_per_gpu * Ngpus)
+                         Ny, Nz = 80,
+                         Lx = Lx_per_gpu * Ngpus,
+                         Ly)
 
 Nt = parse(Int, get(ENV, "NT", "10"))
 
