@@ -32,11 +32,14 @@ Timing uses 100 time steps at dt = 0.1 s, three trials (first is warmup).
 
 ### Single GPU (NT=100, Derecho A100-SXM4-40GB)
 
-| Config | Float32 (ms/step) | Float64 (ms/step) | F64/F32 |
-|--------|-------------------|-------------------|---------|
-| WENO5 + Kessler, anelastic (400×400×80) | 95.4 | 148.5 | 1.56x |
-| Centered(2) + diffusion, anelastic (50×400×80) | 53.7 | 64.9 | 1.21x |
-| Centered(2) + diffusion, compressible (50×400×80) | 5.2 | 5.4 | 1.04x |
+| Config | Grid | Float32 (ms/step) | Float64 (ms/step) | F64/F32 |
+|--------|------|-------------------|-------------------|---------|
+| WENO5 + Kessler, anelastic | 400×400×80 | 95.4 | 148.5 | 1.56x |
+| WENO5 + Kessler, anelastic | 50×400×80 | 60.0 | — | — |
+| Centered(2) + diffusion, anelastic | 400×400×80 | 70.0 | — | — |
+| Centered(2) + diffusion, anelastic | 50×400×80 | 53.7 | 64.9 | 1.21x |
+| Centered(2) + diffusion, compressible | 400×400×80 | 19.7 | — | — |
+| Centered(2) + diffusion, compressible | 50×400×80 | 5.2 | 5.4 | 1.04x |
 
 ### Weak scaling (Float32, x-only partition, NT=100, all optimizations applied)
 
@@ -44,26 +47,44 @@ Timing uses 100 time steps at dt = 0.1 s, three trials (first is warmup).
 
 | GPUs | Nodes | WENO5 anelastic | ERF anelastic | Compressible |
 |------|-------|----------------|--------------|-------------|
-| 1    | 1     | 95.4 ms/step   | 51.2 ms/step | 4.4 ms/step |
-| 2    | 1     | 462.2          | 137.0        | 62.7        |
-| 4    | 1     | 491.6          | 140.5        | 72.0        |
-| 8    | 2     | 666.6          | 172.4        | 95.4        |
-| 16   | 4     | 765.9          | 180.6        | 110.1       |
-| 20   | 5     | 803.3          | 204.9        | 123.7       |
-| 40   | 10    | —              | 233.3        | 137.4       |
+| 1    | 1     | 60.0 ms/step   | 51.2 ms/step | 4.4 ms/step |
+| 2    | 1     | 145.1          | 137.0        | 62.7        |
+| 4    | 1     | 151.3          | 140.5        | 72.0        |
+| 8    | 2     | pending        | 172.4        | 95.4        |
+| 16   | 4     | pending        | 180.6        | 110.1       |
+| 20   | 5     | pending        | 204.9        | 123.7       |
+| 40   | 10    | pending        | 233.3        | 137.4       |
 
-Note: WENO5 uses 400×400×80/GPU in this table (different per-GPU size than ERF/compressible).
+**400×400×80 per GPU:**
 
-**400×400×80 per GPU** (ERF anelastic + compressible): results pending.
+| GPUs | Nodes | WENO5 anelastic | ERF anelastic | Compressible |
+|------|-------|----------------|--------------|-------------|
+| 1    | 1     | 95.4 ms/step   | 70.0 ms/step | 19.7 ms/step |
+| 2    | 1     | 462.2          | 381.5        | 244.6        |
+| 4    | 1     | 491.6          | 467.9        | 203.5        |
+| 8    | 2     | 666.6          | pending      | pending      |
+| 16   | 4     | 765.9          | pending      | pending      |
+| 20   | 5     | 803.3          | pending      | pending      |
+| 40   | 10    | pending        | —            | —            |
 
 ### Multi-node scaling efficiency (relative to 2 nodes / 8 GPUs)
 
+**50×400×80 per GPU:**
+
 | GPUs | Nodes | WENO5 | ERF anelastic | Compressible |
 |------|-------|-------|--------------|-------------|
-| 8    | 2     | 100%  | 100%         | 100%        |
-| 16   | 4     | 87%   | 96%          | 87%         |
-| 20   | 5     | 83%   | 84%          | 77%         |
+| 8    | 2     | —     | 100%         | 100%        |
+| 16   | 4     | —     | 96%          | 87%         |
+| 20   | 5     | —     | 84%          | 77%         |
 | 40   | 10    | —     | 74%          | 69%         |
+
+**400×400×80 per GPU:**
+
+| GPUs | Nodes | WENO5 | ERF anelastic | Compressible |
+|------|-------|-------|--------------|-------------|
+| 8    | 2     | 100%  | pending      | pending     |
+| 16   | 4     | 87%   | pending      | pending     |
+| 20   | 5     | 83%   | pending      | pending     |
 
 ## Package structure
 
