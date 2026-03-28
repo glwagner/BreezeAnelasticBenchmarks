@@ -55,10 +55,32 @@
 NCCL steady-state: 594 calls, 142 ms (0.24 ms/call avg).
 6 outlier calls >2 ms total 153 ms (NCCL init/GC).
 
+## Large grid Float32 results (1024×1024×128/GPU)
+
+| GPUs | ms/step | Scaling efficiency |
+|------|---------|-------------------|
+| 1    | 357.1   | 100% (baseline)   |
+| 2    | 435.4   | 82.0%             |
+| 4    | 429.4   | 83.2%             |
+
+## Overhead analysis (nsight, 2 GPUs, 1024×1024×128 F32)
+
+| Source | ms/step | Stream | Status |
+|--------|---------|--------|--------|
+| NCCL comm (async halos) | 30.4 | comm_stream | Overlapping with compute ✓ |
+| NCCL comm (sync solver) | 3.4 | comm_stream | Overlapping via events ✓ |
+| NCCL comm (residual default) | 20.4 | default | Batched single-field fills |
+| Pack/unpack (halo buffers) | 30.0 | default | Fundamental cost |
+| Pack/unpack (FFT transpose) | 26.2 | default | Fundamental cost |
+
+Total overhead: ~78 ms = pack/unpack (~56 ms) + residual NCCL + event sync.
+Pack/unpack is the dominant remaining cost — requires kernel fusion to eliminate.
+
 ## Notes
 
-- 2→4 GPU scaling is nearly flat (23.6→23.9 ms), confirming overhead is from distributed path
-- ~10 ms distributed overhead = pack/unpack (~3-4 ms) + NCCL comm (~1.4 ms steady) + NCCL outliers (~1.5 ms) + solver/FFT overhead (~2 ms) + extra kernel launches (~2 ms)
-- All 3 halo fills per RK3 substep are algorithmically necessary (can't merge)
-- Multi-field NCCL batching already applied (all fields in one NCCL group per fill call)
-- Remaining optimization: comm/computation overlap (Phase 5)
+- 2→4 GPU scaling is nearly flat, confirming overhead is from distributed path not comm volume
+- All NCCL operations route through a dedicated comm_stream for maximum overlap
+- Async halo fills (from update_state!) overlap with interior tendency computation
+- Multi-field NCCL batching applied for synchronous single-field fills
+- All 3 halo fills per RK3 substep are algorithmically necessary
+- Further improvement requires fusing pack/unpack into compute kernels (deep refactor)
