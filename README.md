@@ -298,5 +298,3 @@ See [`perlmutter_vs_derecho.md`](perlmutter_vs_derecho.md) and
 - [Silvestri, Wagner, et al. (2023)](https://arxiv.org/abs/2309.06662) --
   Oceananigans.jl: A library that achieves breakthrough resolution, memory
   and energy efficiency in global ocean simulations
-- [Wagner et al. (2025)](https://arxiv.org/abs/2601.10441) --
-  Performance benchmarks for atmospheric simulations with Breeze.jl
