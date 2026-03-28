@@ -16,15 +16,15 @@
 - Timestepper: RK3, dt = 0.1 s
 - Warmup: 30 steps, Benchmark: 20 steps
 
-## Results (2026-03-28, current NCCL extension)
+## Results (2026-03-28, NCCL extension with multi-field batching)
 
 ### NonhydrostaticModel + WENO5 + BuoyancyTracer
 
 | GPUs | ms/step | Scaling efficiency |
 |------|---------|-------------------|
-| 1    | 13.38   | 100% (baseline)   |
-| 2    | 21.20   | 63%               |
-| 4    | 23.78   | 56%               |
+| 1    | 13.37   | 100% (baseline)   |
+| 2    | 23.57   | 56.7%             |
+| 4    | 23.87   | 56.0%             |
 
 ### NonhydrostaticModel + Centered + BuoyancyTracer (simpler advection)
 
@@ -42,9 +42,23 @@
 | 2    | 2.82     |
 | 4    | 2.95     |
 
+## Nsight profile breakdown (4 GPUs, WENO5, 10 timesteps)
+
+| Category | % GPU time | Total (ms) |
+|----------|-----------|-----------|
+| NCCL communication | 26.9% | 295 |
+| Tendencies (WENO5) | 26.1% | 286 |
+| FFT (pressure solver) | 13.2% | 145 |
+| Broadcast (pack/unpack) | ~5% | ~55 |
+| Other (RK3, cache, hydro) | ~29% | ~315 |
+
+NCCL steady-state: 594 calls, 142 ms (0.24 ms/call avg).
+6 outlier calls >2 ms total 153 ms (NCCL init/GC).
+
 ## Notes
 
-- WENO5 has more halo points (3 vs 1 for Centered), increasing communication volume
-- The 2→4 GPU scaling is nearly flat (21→24 ms), suggesting communication is the bottleneck
-- 1-GPU is non-distributed (different code path, no halo communication)
-- Distributed overhead: ~1.6-1.8x for Centered, ~1.6-1.8x for WENO5
+- 2→4 GPU scaling is nearly flat (23.6→23.9 ms), confirming overhead is from distributed path
+- ~10 ms distributed overhead = pack/unpack (~3-4 ms) + NCCL comm (~1.4 ms steady) + NCCL outliers (~1.5 ms) + solver/FFT overhead (~2 ms) + extra kernel launches (~2 ms)
+- All 3 halo fills per RK3 substep are algorithmically necessary (can't merge)
+- Multi-field NCCL batching already applied (all fields in one NCCL group per fill call)
+- Remaining optimization: comm/computation overlap (Phase 5)
