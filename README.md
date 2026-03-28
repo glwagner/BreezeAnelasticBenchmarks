@@ -213,7 +213,67 @@ Oceananigans optimizations are on the
 [`glw/optimize-distributed-solver`](https://github.com/CliMA/Oceananigans.jl/tree/glw/optimize-distributed-solver)
 branch (applied locally to `~/.julia/packages/Oceananigans/` on Derecho).
 
-## Optimizations
+## NCCL distributed communication (new)
+
+An NCCL extension for Oceananigans replaces all MPI-based GPU communication
+with [NCCL](https://github.com/JuliaGPU/NCCL.jl), eliminating `sync_device!`
+pipeline stalls and enabling GPU-stream-native communication.
+
+**PR:** [CliMA/Oceananigans.jl#5444](https://github.com/CliMA/Oceananigans.jl/pull/5444)
+**NCCL.jl Complex type support:** [JuliaGPU/NCCL.jl#67](https://github.com/JuliaGPU/NCCL.jl/pull/67)
+
+### Usage
+
+```julia
+using NCCL  # triggers extension load
+NCCLExt = Base.get_extension(Oceananigans, :OceananigansNCCLExt)
+arch = NCCLExt.NCCLDistributed(GPU(); partition = Partition(Ngpus, 1))
+# All halo fills and solver transposes automatically use NCCL
+```
+
+### NCCL weak scaling results (A100-SXM4-80GB, NV12 NVLink)
+
+NonhydrostaticModel + WENO5 + BuoyancyTracer, 200×200×80 per GPU:
+
+| GPUs | ms/step | Scaling efficiency |
+|------|---------|-------------------|
+| 1    | 13.37   | 100% (baseline)   |
+| 2    | 23.46   | 57%               |
+| 4    | 21.58   | 62%               |
+
+Pressure solver only (isolated):
+
+| GPUs | NCCL (ms/solve) | MPI Derecho (ms/solve) |
+|------|-----------------|------------------------|
+| 1    | 0.95            | 8.4                    |
+| 2    | 2.82            | 36.2                   |
+| 4    | 2.95            | 37.7                   |
+
+### NCCL extension features
+
+1. **`NCCLDistributed` architecture** — drop-in replacement for `Distributed`, routes all
+   GPU-to-GPU communication through NCCL instead of MPI
+2. **NCCL pressure solver transposes** — replaces `sync_device! + MPI.Alltoall` with
+   NCCL grouped `Send`/`Recv` (stream-native, no pipeline stalls)
+3. **Multi-field batched halo fills** — packs all fields' send buffers, then one NCCL
+   group for all `Send`/`Recv`, then unpacks all. Reduces NCCL kernel launches per timestep.
+4. **`sync_device!` no-op** — NCCL operations are GPU-stream-ordered, so explicit
+   CPU-GPU synchronization before communication is unnecessary
+
+### Nsight Systems profiling (4 GPUs, WENO5, 10 timesteps)
+
+| Category | % GPU time | Total (ms) |
+|----------|-----------|-----------|
+| NCCL communication | 27% | 295 |
+| Tendencies (WENO5) | 26% | 286 |
+| FFT (pressure solver) | 13% | 145 |
+| Pack/Unpack buffers | ~5% | ~55 |
+| Other | ~29% | ~315 |
+
+NCCL steady-state: 0.24 ms/call average. 6 outlier calls > 2 ms (NCCL init) account
+for 52% of total NCCL time.
+
+## MPI optimizations (Derecho)
 
 Four optimizations were developed during this benchmarking effort:
 
