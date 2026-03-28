@@ -41,12 +41,12 @@ vs MPI's 36%. The `sync_device!` elimination in NCCL is the key factor.
 
 ### ERF anelastic weak scaling (50×400×80/GPU, NT=100)
 
-| GPUs | Nodes | MPI (ms/step) | NCCL (ms/step) | NCCL speedup |
-|------|-------|---------------|----------------|--------------|
-| 1    | 1     | pending       | —              | —            |
-| 2    | 1     | pending       | pending        | —            |
-| 4    | 1     | pending       | pending        | —            |
-| 8    | 2     | pending       | pending        | —            |
+| GPUs | Nodes | NCCL Trial 1 (ms/step) | NCCL Trial 2 (ms/step) |
+|------|-------|------------------------|------------------------|
+| 1    | 1     | —                      | —                      |
+| 2    | 1     | 93.2                   | 93.5                   |
+| 4    | 1     | 15.7                   | 23.2                   |
+| 8    | 2     | pending                | pending                |
 
 ### NCCL pressure solver (isolated, 200×200×80/GPU)
 
