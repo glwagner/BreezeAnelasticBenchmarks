@@ -21,7 +21,8 @@
 # Perlmutter has 4 A100-80GB GPUs per node.
 
 module load julia/1.12.1
-module load nccl
+module load nccl/2.29.2-cu13
+export LD_PRELOAD=/usr/lib64/libstdc++.so.6
 
 export MPICH_GPU_SUPPORT_ENABLED=1
 export JULIA_CUDA_MEMORY_POOL=none

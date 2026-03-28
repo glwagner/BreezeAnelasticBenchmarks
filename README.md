@@ -139,11 +139,55 @@ Derecho has 4 A100 GPUs per node. Multi-GPU requires `JULIA_CUDA_MEMORY_POOL=non
 
 ## Running on Perlmutter (NERSC)
 
+### Setup
+
 ```bash
 module load julia/1.12.1
-sbatch benchmarks/supercell_benchmark.sh                    # single GPU
-NGPUS=4 sbatch --nodes=1 benchmarks/distributed_supercell_benchmark.sh  # 4 GPUs
+module load nccl/2.29.2-cu13
+export LD_PRELOAD=/usr/lib64/libstdc++.so.6
+
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia --project=. -e 'using CUDA; CUDA.set_runtime_version!(v"13.0")'
+julia --project=. -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
 ```
+
+Then edit `LocalPreferences.toml` to add GTL preload for CUDA-aware MPI:
+```toml
+[MPIPreferences]
+preloads = ["/opt/cray/pe/mpich/default/gtl/lib/libmpi_gtl_cuda.so"]
+preloads_env_switch = "MPICH_GPU_SUPPORT_ENABLED"
+```
+
+Precompile (login nodes have GPUs):
+```bash
+julia --project=. -e 'using Pkg; Pkg.precompile()'
+```
+
+### NCCL on Perlmutter
+
+NCCL requires `nccl/2.29.2-cu13` (the cu13 version) and an `LD_PRELOAD` workaround
+for libstdc++ compatibility. Both are set in the SLURM scripts automatically.
+To use NCCL communication instead of MPI, pass `USE_NCCL=1`:
+
+```bash
+USE_NCCL=1 NGPUS=4 sbatch --nodes=1 benchmarks/distributed_supercell_erf_benchmark.sh
+```
+
+### Weak scaling
+
+```bash
+sbatch benchmarks/supercell_benchmark.sh                    # single GPU
+NGPUS=4 sbatch --nodes=1 benchmarks/distributed_supercell_benchmark.sh  # 4 GPUs, MPI
+NGPUS=8 sbatch --nodes=2 benchmarks/distributed_supercell_benchmark.sh  # 8 GPUs, MPI
+USE_NCCL=1 NGPUS=8 sbatch --nodes=2 benchmarks/distributed_supercell_benchmark.sh  # 8 GPUs, NCCL
+```
+
+### Cray MPICH warning suppression
+
+Multi-node jobs on Perlmutter generate millions of "malformed environment entry"
+warnings from Julia's `Base.env.jl` due to Cray MPICH injecting corrupted
+environment entries. The benchmark scripts suppress these via
+`disable_logging(Logging.Warn)` and print timing to stdout instead of stderr.
 
 ## Dependencies
 
