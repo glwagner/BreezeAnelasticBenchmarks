@@ -21,10 +21,12 @@
 
 module load julia/1.12.1
 module load nccl/2.29.2-cu13
-export LD_PRELOAD=/usr/lib64/libstdc++.so.6
 
 export MPICH_GPU_SUPPORT_ENABLED=1
 export JULIA_CUDA_MEMORY_POOL=none
+# GTL needs libcudart.so.12; NCCL module loads cudatoolkit/13 which only has .so.13
+export LD_LIBRARY_PATH="/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9/targets/x86_64-linux/lib:${LD_LIBRARY_PATH}"
+export LD_PRELOAD="/usr/lib64/libstdc++.so.6:${CRAY_MPICH_ROOTDIR}/gtl/lib/libmpi_gtl_cuda.so"
 
 NGPUS="${NGPUS:-1}"
 FLOAT_TYPE="${FLOAT_TYPE:-Float32}"
