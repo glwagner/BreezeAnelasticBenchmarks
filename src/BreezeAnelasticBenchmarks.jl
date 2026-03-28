@@ -293,45 +293,57 @@ end
 
 # ---- Precompilation workloads ------------------------------------------------
 #
-# Serial workload: runs on a tiny grid.
-#   - Uses GPU if available, otherwise CPU.
-#   - If MPI is initialized, only rank 0 runs it (avoids file-system races
-#     when multiple ranks precompile simultaneously).
+# All three configs (WENO, ERF, compressible) × all architectures
+# (GPU, Distributed, NCCLDistributed) are precompiled here.
 #
-# Distributed workload: runs only when MPI is initialized AND CUDA is
-#   functional.  All ranks participate.  This path is only reached when
-#   precompilation happens inside an MPI job, e.g.
-#
-#       srun -n 4 --gpus 4 julia --project -e 'using MPI; MPI.Init(); using Pkg; Pkg.precompile()'
-#
+# Run with 2+ GPUs under MPI to cache everything:
+#   srun -n 2 --gpus 2 julia --project -e 'using MPI; MPI.Init(); using Pkg; Pkg.precompile()'
+
+function precompile_all_configs!(arch; Nx, Ny, Nz, Lx, Ly, Lz)
+    run_benchmark!(setup_supercell(arch; Nx, Ny, Nz, Lx, Ly, Lz), 1)
+    run_benchmark!(setup_supercell_erf(arch; Nx, Ny, Nz, Lx, Ly, Lz), 1)
+    run_benchmark!(setup_supercell_compressible(arch; Nx, Ny, Nz, Lx, Ly, Lz), 1)
+end
 
 @setup_workload begin
-    Npc = 8            # small grid for fast precompilation (must be >= halo=5)
-    Lx_pc = 168_000.0
-    Ly_pc = 168_000.0
-    Lz_pc = 20_000.0
+    N = 8
+    Lx = 168_000.0
+    Ly = 168_000.0
+    Lz = 20_000.0
 
     @compile_workload begin
-        # --- Serial workload ---
-        _do_serial = !MPI.Initialized() || MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        is_rank0 = !MPI.Initialized() || MPI.Comm_rank(MPI.COMM_WORLD) == 0
 
-        if _do_serial
-            _arch = CUDA.functional() ? GPU() : CPU()
-            _model = setup_supercell(_arch;
-                                     Nx = Npc, Ny = Npc, Nz = Npc,
-                                     Lx = Lx_pc, Ly = Ly_pc, Lz = Lz_pc)
-            run_benchmark!(_model, 1)
+        kw = (; Nx=N, Ny=N, Nz=N, Lx, Ly, Lz)
+
+        # Serial GPU workload (rank 0 only)
+        if is_rank0 && CUDA.functional()
+            precompile_all_configs!(GPU(); kw...)
+        elseif is_rank0
+            run_benchmark!(setup_supercell(CPU(); kw...), 1)
         end
 
-        # --- Distributed workload ---
+        # Distributed workloads (all ranks)
         if MPI.Initialized() && CUDA.functional()
-            _Ngpus = MPI.Comm_size(MPI.COMM_WORLD)
-            _dist_arch = Distributed(GPU(); partition = Partition(_Ngpus, 1))
-            _dist_model = setup_supercell(_dist_arch;
-                                          Nx = Npc * _Ngpus, Ny = Npc, Nz = Npc,
-                                          Lx = Lx_pc * _Ngpus, Ly = Ly_pc, Lz = Lz_pc)
-            run_benchmark!(_dist_model, 1)
+            Ngpus = MPI.Comm_size(MPI.COMM_WORLD)
+            dist_kw = (; Nx = N * Ngpus, Ny=N, Nz=N, Lx = Lx * Ngpus, Ly, Lz)
+
+            # MPI Distributed
+            mpi_arch = Distributed(GPU(); partition = Partition(Ngpus, 1))
+            precompile_all_configs!(mpi_arch; dist_kw...)
             MPI.Barrier(MPI.COMM_WORLD)
+
+            # NCCL Distributed
+            try
+                using NCCL
+                ext = Base.get_extension(Oceananigans, :OceananigansNCCLExt)
+                if ext !== nothing
+                    nccl_arch = ext.NCCLDistributed(GPU(); partition = Partition(Ngpus, 1))
+                    precompile_all_configs!(nccl_arch; dist_kw...)
+                    MPI.Barrier(MPI.COMM_WORLD)
+                end
+            catch
+            end
         end
     end
 end
