@@ -12,7 +12,7 @@ using Printf
 use_nccl = "--nccl" in ARGS
 if use_nccl
     using NCCL
-    using Oceananigans.DistributedComputations
+    using Oceananigans
     const NCCLDistributed = Base.get_extension(Oceananigans, :OceananigansNCCLExt).NCCLDistributed
 end
 
