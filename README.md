@@ -86,6 +86,20 @@ Timing uses 100 time steps at dt = 0.1 s, three trials (first is warmup).
 | 16   | 4     | 87%   | pending      | pending     |
 | 20   | 5     | 83%   | pending      | pending     |
 
+### Perlmutter (NERSC) — NVIDIA A100-SXM4-80GB, Julia 1.12.1
+
+**Compressible weak scaling (50×400×80 per GPU, NT=100, MPI):**
+
+| GPUs | Nodes | ms/step |
+|------|-------|---------|
+| 1    | 1     | 3.5     |
+| 2    | 1     | 8.6     |
+| 4    | 1     | 9.8     |
+| 8    | 2     | pending |
+| 16   | 4     | pending |
+
+Additional configs (ERF anelastic, WENO5, NCCL comparison) pending.
+
 ## Package structure
 
 This repo is a Julia package (`BreezeAnelasticBenchmarks`) that exports
