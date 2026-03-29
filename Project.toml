@@ -2,16 +2,6 @@ name = "BreezeAnelasticBenchmarks"
 uuid = "a164bd6c-5415-48ab-9939-a25826670554"
 version = "0.1.0"
 
-[compat]
-Breeze = "0.4"
-CUDA = "5.9"
-CairoMakie = "0.15.9"
-MPI = "0.20"
-MPIPreferences = "0.1.12"
-NCCL = "0.1.2"
-Oceananigans = "0.105, 0.106"
-PrecompileTools = "1"
-
 [deps]
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
@@ -22,6 +12,18 @@ NCCL = "3fe64909-d7a1-4096-9b7d-7a0f12cf0f6b"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
+
+[compat]
+Breeze = "0.4"
+CUDA = "5.9"
+CairoMakie = "0.15.9"
+MPI = "0.20"
+MPIPreferences = "0.1.12"
+NCCL = "0.1.2"
+Oceananigans = "0.105, 0.106"
+PrecompileTools = "1"
+SeawaterPolynomials = "0.3.10"
 
 [extras]
 CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
