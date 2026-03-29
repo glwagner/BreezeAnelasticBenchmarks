@@ -4,83 +4,73 @@
 
 - 4x NVIDIA A100-SXM4-80GB
 - NV12 NVLink between all GPU pairs
-- Open MPI 4.1.6 (no GPU-aware MPI — NCCL handles all GPU communication)
-- Julia 1.12.5
+- Julia 1.12.5, NCCL 2.28.3
+- NCCLDistributed architecture (all comm via NCCL, no GPU-aware MPI needed)
 
-## Configuration
+## Full Results (all optimizations: comm_stream + async overlap + pipelined RK3)
 
-- Grid: 200x200x80 per GPU (weak scaling)
-- Topology: Periodic x Periodic x Bounded
-- Advection: WENO(order=5)
-- Buoyancy: BuoyancyTracer, tracers = :b
-- Timestepper: RK3, dt = 0.1 s
-- Warmup: 30 steps, Benchmark: 20 steps
+### WENO5 + BuoyancyTracer, 1024×1024×128 per GPU (large grid)
 
-## Results (2026-03-28, NCCL extension with multi-field batching)
+| GPUs | Float32 (ms) | F32 eff | Float64 (ms) | F64 eff |
+|------|-------------|---------|-------------|---------|
+| 1    | 356.8       | 100%    | 487.7       | 100%    |
+| 2    | 419.0       | 85.2%   | 594.0       | 82.1%   |
+| 4    | 420.9       | 84.8%   | 606.1       | 80.5%   |
 
-### NonhydrostaticModel + WENO5 + BuoyancyTracer
+### WENO5 + BuoyancyTracer, 200×200×80 per GPU (small grid)
 
-| GPUs | ms/step | Scaling efficiency |
-|------|---------|-------------------|
-| 1    | 13.37   | 100% (baseline)   |
-| 2    | 23.57   | 56.7%             |
-| 4    | 23.87   | 56.0%             |
+| GPUs | Float64 (ms) | F64 eff |
+|------|-------------|---------|
+| 1    | 14.31       | 100%    |
+| 2    | 21.95       | 65.2%   |
+| 4    | 21.87       | 65.4%   |
 
-### NonhydrostaticModel + Centered + BuoyancyTracer (simpler advection)
+### ERF-like: Centered + ScalarDiffusivity(ν=200,κ=200), 50×400×80 per GPU
 
-| GPUs | ms/step | Scaling efficiency |
-|------|---------|-------------------|
-| 1    | 8.9     | 100% (baseline)   |
-| 2    | 16.0    | 56%               |
-| 4    | 16.0    | 56%               |
+| GPUs | Float32 (ms) | F32 eff | Float64 (ms) | F64 eff |
+|------|-------------|---------|-------------|---------|
+| 1    | 3.87        | 100%    | 6.81        | 100%    |
+| 2    | 14.93       | 25.9%   | 19.29       | 35.3%   |
+| 4    | 18.47       | 20.9%   | 19.84       | 34.3%   |
 
-### Pressure solver only (isolated)
+## Analysis
 
-| GPUs | ms/solve |
-|------|----------|
-| 1    | 0.95     |
-| 2    | 2.82     |
-| 4    | 2.95     |
+### Why scaling efficiency depends on grid size
 
-## Nsight profile breakdown (4 GPUs, WENO5, 10 timesteps)
+The distributed overhead is ~70 ms of GPU idle time at synchronization points
+(cuStreamWaitEvent waits for NCCL to complete). This is approximately constant
+regardless of grid size. At large grids, compute dominates:
 
-| Category | % GPU time | Total (ms) |
-|----------|-----------|-----------|
-| NCCL communication | 26.9% | 295 |
-| Tendencies (WENO5) | 26.1% | 286 |
-| FFT (pressure solver) | 13.2% | 145 |
-| Broadcast (pack/unpack) | ~5% | ~55 |
-| Other (RK3, cache, hydro) | ~29% | ~315 |
+| Grid/GPU | Compute (ms) | Overhead (ms) | Efficiency |
+|----------|-------------|--------------|-----------|
+| 1024×1024×128 F32 | 357 | ~63 | 85% |
+| 1024×1024×128 F64 | 488 | ~106 | 82% |
+| 200×200×80 F64 | 14 | ~8 | 65% |
+| 50×400×80 F64 | 7 | ~12 | 35% |
 
-NCCL steady-state: 594 calls, 142 ms (0.24 ms/call avg).
-6 outlier calls >2 ms total 153 ms (NCCL init/GC).
+### Where the overhead comes from (nsight profiling)
 
-## Large grid Float32 results (1024×1024×128/GPU)
+Per timestep, the GPU is idle at 33 synchronization points totaling ~70 ms:
+- `synchronize_communication!`: 3 per step (1 per RK3 substage)
+- Pressure solver transposes: 6 per step (2 per substage)
+- Velocity/pressure halo fills: ~4 per step
 
-| GPUs | ms/step | Scaling efficiency |
-|------|---------|-------------------|
-| 1    | 357.1   | 100% (baseline)   |
-| 2    | 435.4   | 82.0%             |
-| 4    | 429.4   | 83.2%             |
+Each wait averages 2-5 ms (NVLink transfer latency for the data volume).
 
-## Overhead analysis (nsight, 2 GPUs, 1024×1024×128 F32)
+### What's already optimized
 
-| Source | ms/step | Stream | Status |
-|--------|---------|--------|--------|
-| NCCL comm (async halos) | 30.4 | comm_stream | Overlapping with compute ✓ |
-| NCCL comm (sync solver) | 3.4 | comm_stream | Overlapping via events ✓ |
-| NCCL comm (residual default) | 20.4 | default | Batched single-field fills |
-| Pack/unpack (halo buffers) | 30.0 | default | Fundamental cost |
-| Pack/unpack (FFT transpose) | 26.2 | default | Fundamental cost |
+1. All NCCL on dedicated comm_stream (overlaps with GPU compute)
+2. Async halo fills overlap with interior tendency computation
+3. Pipelined RK3: tracer halos start before pressure solve
+4. cuMemcpy2D for halo pack (DMA engine, frees compute units)
+5. Multi-field batched NCCL groups (reduce kernel launches)
+6. sync_device! eliminated (NCCL is stream-native)
 
-Total overhead: ~78 ms = pack/unpack (~56 ms) + residual NCCL + event sync.
-Pack/unpack is the dominant remaining cost — requires kernel fusion to eliminate.
+### Remaining optimization opportunities
 
-## Notes
-
-- 2→4 GPU scaling is nearly flat, confirming overhead is from distributed path not comm volume
-- All NCCL operations route through a dedicated comm_stream for maximum overlap
-- Async halo fills (from update_state!) overlap with interior tendency computation
-- Multi-field NCCL batching applied for synchronous single-field fills
-- All 3 halo fills per RK3 substep are algorithmically necessary
-- Further improvement requires fusing pack/unpack into compute kernels (deep refactor)
+1. **Pipelining across RK3 substages** — start next substage's halo comm while
+   current substage's pressure solver runs. Requires double-buffered fields.
+2. **Communication-avoiding pressure solver** — multigrid or local iterative
+   method that doesn't need global FFT transposes.
+3. **Larger grids** — efficiency naturally improves as compute grows with N³
+   while comm overhead grows with N².
