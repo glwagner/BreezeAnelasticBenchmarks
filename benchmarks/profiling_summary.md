@@ -225,4 +225,14 @@ the 6 pressure solver transpose waits and 4 pressure-related halo fills per step
 |-------------|--------------------|--------------------|
 | 50×400×80 | 36% | 61% |
 | 200×200×80 | 65% | — |
-| 1024×1024×128 | 85% | ~99% (estimated) |
+| 1024×1024×128 (F32) | 85% | **98%** |
+
+#### CompressibleDynamics large grid results (1024×1024×128/GPU, F32)
+
+| GPUs | ms/step | Efficiency |
+|------|---------|-----------|
+| 1 | 189.9 | 100% |
+| 2 | 194.6 | 97.6% |
+| 4 | 193.9 | 97.9% |
+
+Overhead: only ~4 ms on ~190 ms of compute. Near-perfect weak scaling.
