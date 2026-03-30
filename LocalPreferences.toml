@@ -3,11 +3,11 @@ __clear__ = ["local"]
 version = "13.0"
 
 [MPIPreferences]
-_format = "1.1"
-abi = "MPICH"
+__clear__ = ["preloads_env_switch"]
+_format = "1.0"
+abi = "OpenMPI"
 binary = "system"
-cclibs = ["darshan", "lustreapi", "z", "cupti", "cudart", "cuda", "sci_gnu_mpi", "sci_gnu", "dl", "dsmml", "xpmem"]
-libmpi = "libmpi_gnu_123.so"
-mpiexec = "srun"
-preloads = ["libmpi_gtl_cuda.so"]
-preloads_env_switch = "MPICH_GPU_SUPPORT_ENABLED"
+cclibs = []
+libmpi = "libmpi"
+mpiexec = "mpiexec"
+preloads = []
