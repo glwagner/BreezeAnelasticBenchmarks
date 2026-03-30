@@ -93,24 +93,6 @@ Lx = Lx_per_gpu * Rx
 Ly = Ly_per_gpu * Ry
 Lz = 20kilometers
 
-# Warm up CUDA kernel cache on rank 0 with a small single-GPU model.
-# This populates the shared filesystem cache so all ranks can reuse it
-# without Lustre contention during the distributed model construction.
-if rank == 0
-    using CUDA
-    warmup_model = if config == "weno"
-        setup_supercell(GPU(); FT, Nx=8, Ny=8, Nz=8, Lx=Lx_per_gpu, Ly=Ly_per_gpu, Lz)
-    elseif config == "erf"
-        setup_supercell_erf(GPU(); FT, Nx=8, Ny=8, Nz=8, Lx=Lx_per_gpu, Ly=Ly_per_gpu, Lz)
-    else
-        setup_supercell_compressible(GPU(); FT, Nx=8, Ny=8, Nz=8, Lx=Lx_per_gpu, Ly=Ly_per_gpu, Lz)
-    end
-    run_benchmark!(warmup_model, 1)
-    GC.gc(true); CUDA.reclaim()
-    println("CUDA kernel cache warmed up on rank 0")
-end
-MPI.Barrier(MPI.COMM_WORLD)
-
 comm_backend = use_nccl ? "NCCL" : "MPI"
 if rank == 0
     println("$config benchmark ($comm_backend): Ngpus=$Ngpus Rx=$Rx Ry=$Ry FT=$FT Nx=$Nx Ny=$Ny")
