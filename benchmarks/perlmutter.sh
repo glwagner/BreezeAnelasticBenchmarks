@@ -16,12 +16,19 @@
 #   CONFIG=weno NGPUS=16 sbatch --nodes=4 benchmarks/perlmutter.sh
 
 module load julia/1.12.1
+module load cudatoolkit craype-accel-nvidia80
 module load nccl/2.29.2-cu13
 
 export MPICH_GPU_SUPPORT_ENABLED=1
 export JULIA_CUDA_MEMORY_POOL=none
-export LD_PRELOAD="/usr/lib64/libstdc++.so.6:${CRAY_MPICH_ROOTDIR}/gtl/lib/libmpi_gtl_cuda.so"
+
+# GTL is loaded via MPIPreferences dlopen (no LD_PRELOAD of GTL).
+# GTL needs libcudart.so.12 but nccl/2.29.2-cu13 loads CUDA 13.
+# Add CUDA 12.9 lib path so GTL can find libcudart.so.12.
 export LD_LIBRARY_PATH="/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9/targets/x86_64-linux/lib:${LD_LIBRARY_PATH}"
+
+# libstdc++ preload fixes NCCL.jl compatibility with system Julia.
+export LD_PRELOAD=/usr/lib64/libstdc++.so.6
 
 NGPUS="${NGPUS:-1}"
 CONFIG="${CONFIG:-compressible}"
