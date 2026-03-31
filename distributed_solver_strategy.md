@@ -71,77 +71,90 @@ The distributed solver launches **21× more FFT kernels** for the same per-GPU
 grid size, because each 1D plan launches many small kernels instead of one
 large batched kernel.
 
-## Proposed Fix 1: Batched Local FFT for Slab-X
+## Proposed Fix 1: Reshape y-FFT for Contiguous Memory Access
 
-**Modify `plan_distributed_transforms` to detect slab-x and use a batched
-plan for the local y-direction.**
+**The problem is NOT about batching y+z** — the z-direction uses a tridiagonal
+solver (not FFT) in the slab-x Z-stretched path. The z-FFT plan isn't even
+used in `_slab_x_solve!`.
 
-For slab-x (Ry=1, only x is partitioned):
-- y is fully local → can batch the y-FFT
-- z is fully local → can batch the z-FFT
-- Only x requires a transpose
+**The actual problem:** The 1D FFT along dim 2 generates 55× more GPU kernel
+launches than the non-distributed solver because cuFFT decomposes a strided
+dim-2 FFT into many small kernels.
 
-The fix: instead of separate 1D plans for y and z, create a **single batched
-plan for (y, z)** or at minimum use the non-distributed plan for the y-FFT.
+Nsight data (50×400×80 grid, 50 steps):
 
-### Implementation
+| | 1-GPU non-distributed | 2-GPU distributed |
+|---|---|---|
+| FFT kernel calls | 900 (18/step) | 49,200 (492/step/GPU) |
+| Avg kernel time | 33 μs | 8 μs |
+| FFT total | 30.1 ms | 409.6 ms |
 
-In `plan_distributed_transforms.jl`, detect slab-x and use batched plans:
+The 2-GPU solver launches 492 FFT kernels per step because the y-FFT plan
+along dim 2 of a 50×400×80 array creates many tiny kernels. cuFFT must do
+50×80 = 4000 independent transforms of length 400, each accessing strided
+memory (stride = Nx = 50 elements between consecutive y-values).
+
+**The fix:** Reshape the y-field to put dim 2 first (contiguous in memory),
+then plan the FFT along dim 1 — exactly what the non-distributed solver does
+for Bounded y-topology.
+
+### Current code (`plan_distributed_transforms.jl`):
 
 ```julia
-function plan_distributed_transforms(global_grid, storage::TransposableField, planner_flag)
-    topo = topology(global_grid)
-    arch = architecture(global_grid)
-    Rx, Ry, _ = arch.ranks
+# For Periodic y on GPU (our case): plans along dim 2 (strided)
+forward_plan_y = plan_forward_transform(parent(storage.yfield), Periodic(), [2], planner_flag)
+```
 
-    grids = (storage.zfield.grid, storage.yfield.grid, storage.xfield.grid)
+This generates many small kernels because dim 2 is non-contiguous.
 
-    # x-FFT always needs separate plan (operates after transpose)
-    forward_plan_x  = plan_forward_transform(parent(storage.xfield), topo[1](), [1], planner_flag)
-    backward_plan_x = plan_backward_transform(parent(storage.xfield), topo[1](), [1], planner_flag)
+### For Bounded y on GPU (already has the fix!):
 
-    if Ry == 1  # slab-x: y and z are fully local
-        # Use batched plan for local directions (same strategy as non-distributed solver)
-        local_topo = (topo[2], topo[3])  # (Periodic, Bounded) for typical case
-        local_periodic_dims = [d+1 for (d, t) in enumerate(local_topo) if t == Periodic]  # [2]
-        local_bounded_dims  = [d+1 for (d, t) in enumerate(local_topo) if t == Bounded]   # [3]
+```julia
+# Reshapes to put y first, then plans along dim 1 (contiguous)
+rs_size    = reshaped_size(grids[2])   # (Ny, Nx, Nz)
+rs_storage = reshape(parent(storage.yfield), rs_size)
+forward_plan_y = plan_forward_transform(rs_storage, Bounded(), [1], planner_flag)
+```
 
-        # Batched y-FFT: plan along dim 2 with batching across dims 1,3
-        # This is the same as the non-distributed solver's periodic plan
-        if !isempty(local_periodic_dims)
-            forward_plan_yz_periodic  = plan_forward_transform(parent(storage.yfield),
-                                                                Periodic(), local_periodic_dims, planner_flag)
-            backward_plan_yz_periodic = plan_backward_transform(parent(storage.yfield),
-                                                                 Periodic(), local_periodic_dims, planner_flag)
-        end
+### Proposed change:
 
-        if !isempty(local_bounded_dims)
-            forward_plan_yz_bounded  = plan_forward_transform(parent(storage.yfield),
-                                                               Bounded(), local_bounded_dims, planner_flag)
-            backward_plan_yz_bounded = plan_backward_transform(parent(storage.yfield),
-                                                                Bounded(), local_bounded_dims, planner_flag)
-        end
-
-        # ... construct forward/backward operations using batched plans ...
-    else
-        # Pencil decomposition: fall back to separate 1D plans (current behavior)
-        # ...
-    end
+```julia
+# Apply the same reshape strategy to Periodic y on GPU:
+if arch isa GPU
+    rs_size    = reshaped_size(grids[2])   # (Ny, Nx, Nz)
+    rs_storage = reshape(parent(storage.yfield), rs_size)
+    forward_plan_y  = plan_forward_transform(rs_storage, topo[2](), [1], planner_flag)
+    backward_plan_y = plan_backward_transform(rs_storage, topo[2](), [1], planner_flag)
+    y_dims = [2]  # DiscreteTransform still reports dim 2 for correct permutation
+else
+    forward_plan_y  = plan_forward_transform(parent(storage.yfield), topo[2](), [2], planner_flag)
+    backward_plan_y = plan_backward_transform(parent(storage.yfield), topo[2](), [2], planner_flag)
+    y_dims = [2]
 end
 ```
 
+This is a **4-line change** in `plan_distributed_transforms.jl`.
+
 ### Expected Improvement
 
-The y-FFT currently costs ~1.5 ms (of the 4.26 ms total). With a batched plan,
-it would drop to ~0.3 ms (similar to the non-distributed solver's (x,y) FFT cost
-divided by 2). **Estimated savings: ~1.2 ms per step** on the small grid.
+With contiguous-memory layout, cuFFT should generate ~10× fewer kernels
+(similar to the Bounded case which already uses this strategy). The y-FFT
+cost should drop from the current ~1.5 ms to ~0.15 ms per step.
 
-The z-FFT (DCT for Bounded) would also benefit from batching if combined with
-the y-FFT into a single `plan_forward_transform(storage, Bounded(), [3])` call
-that batches across x and y.
+**Estimated total FFT savings: ~2.5 ms/step** on the 50×400×80 grid.
 
-Combined with the reduced kernel launch count (501 → ~100), the total FFT cost
-should approach the non-distributed solver's 0.71 ms. **Estimated savings: ~3 ms.**
+Note: the x-FFT after transpose operates on the transposed xfield where
+dim 1 IS contiguous — it doesn't have this problem. The x-FFT already
+plans along dim 1.
+
+### Important caveat
+
+The `DiscreteTransform` wrapper handles the reshape/permutation logic via
+`transpose_dims`. For Bounded y, `y_dims = [2]` triggers a permutation.
+For Periodic y, the current code sets `y_dims = [2]` with `transpose_dims=nothing`.
+After the reshape, we need to ensure the DiscreteTransform correctly applies
+the (2,1,3) permutation before/after the FFT. This may require updating the
+DiscreteTransform dispatch for this case.
 
 ## Proposed Fix 2: Overlap Velocity Halo with Tracer Advance
 
