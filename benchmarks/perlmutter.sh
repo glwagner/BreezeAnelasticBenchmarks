@@ -16,6 +16,7 @@
 #   CONFIG=weno NGPUS=16 sbatch --nodes=4 benchmarks/perlmutter.sh
 
 module load julia/1.12.1
+module load cray-mpich
 module load nccl/2.29.2-cu13
 
 export MPICH_GPU_SUPPORT_ENABLED=1
@@ -29,6 +30,10 @@ export LD_LIBRARY_PATH="/opt/nvidia/hpc_sdk/Linux_x86_64/25.5/cuda/12.9/targets/
 
 # libstdc++ preload fixes NCCL.jl compatibility with system Julia.
 export LD_PRELOAD=/usr/lib64/libstdc++.so.6
+
+# Precompile on a single process before srun to avoid
+# multi-rank precompile contention and deadlocks
+julia --project=. -e 'using Pkg; Pkg.precompile()' 2>/dev/null
 
 NGPUS="${NGPUS:-1}"
 CONFIG="${CONFIG:-compressible}"
