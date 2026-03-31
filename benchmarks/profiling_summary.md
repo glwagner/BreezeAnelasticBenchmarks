@@ -227,3 +227,48 @@ The 13→4 sync point reduction comes from eliminating:
 **For both:**
 - Efficiency improves naturally with grid size (fixed ~3-7 ms overhead vs N³ compute)
 - Multi-node testing needed (Slingshot/InfiniBand adds inter-node latency)
+
+---
+
+## Part 3: X-Distribution vs Y-Distribution
+
+**Config:** NonhydrostaticModel + Centered(2) + diffusion, 50×400×80/GPU, F64, 2 GPUs
+
+| Category | x-dist Partition(2,1) | y-dist Partition(1,2) | Difference |
+|----------|----------------------|----------------------|-----------|
+| NCCL | 10.06 ms | 7.65 ms | **-2.41** |
+| FFT | 4.26 ms | 2.61 ms | **-1.65** |
+| Tendencies | 1.11 ms | 1.17 ms | +0.06 |
+| Broadcast/fill | 1.14 ms | 1.03 ms | -0.11 |
+| Transpose pack | 0.49 ms | 0.82 ms | +0.33 |
+| Other | 2.23 ms | 2.07 ms | -0.16 |
+| **GPU idle gaps** | **3.26 ms (13 gaps)** | **1.41 ms (7 gaps)** | **-1.85** |
+
+### Benchmark results
+
+| Partition | 1 GPU | 2 GPUs | 4 GPUs | 2-GPU eff |
+|-----------|-------|--------|--------|----------|
+| `Partition(Ngpus, 1)` x-dist | 5.79 | 12.47 | 12.46 | 46% |
+| `Partition(1, Ngpus)` y-dist | 5.79 | 10.29 | 9.80 | **56%** |
+
+### FFT kernel launch comparison
+
+| Direction | x-dist | y-dist |
+|-----------|--------|--------|
+| `regular_fft<400>` (y-FFT) | 480/step | — |
+| `regular_fft<800>` (y-FFT after transpose) | — | 240/step |
+| `regular_fft<100>` (x-FFT after transpose) | 6/step | — |
+| `regular_fft<50>` (x-FFT local) | — | 6/step |
+| `regular_fft<80>` (z-permute) | — | 6/step |
+
+### Why y-dist is faster
+
+1. **The x-FFT stays local and contiguous** (dim 1, 6 kernels/step vs 480 for x-dist's strided y-FFT). This saves 1.65 ms in FFT time.
+
+2. **Fewer sync points** (7 vs 13 GPU idle gaps). For slab-y, the solver transposes y→x then x→y. The x-direction is local, so the x-FFT doesn't need communication. The y-FFT needs a transpose, but only in one direction (y is distributed).
+
+3. **NCCL communication is faster** (7.65 vs 10.06 ms) because there's less total data to transfer — the y-halo has fewer cells (Nx × Nz = 50×80 = 4000) vs the x-halo (Ny × Nz = 400×80 = 32000).
+
+### Implications
+
+For grids where one horizontal dimension is much larger than the other (like 50×400×80), **distribute along the larger dimension** for better scaling. This keeps the smaller dimension local and contiguous for FFT.
