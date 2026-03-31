@@ -147,14 +147,37 @@ Note: the x-FFT after transpose operates on the transposed xfield where
 dim 1 IS contiguous — it doesn't have this problem. The x-FFT already
 plans along dim 1.
 
-### Important caveat
+### UPDATE: Deeper analysis shows the reshape alone may not help
 
-The `DiscreteTransform` wrapper handles the reshape/permutation logic via
-`transpose_dims`. For Bounded y, `y_dims = [2]` triggers a permutation.
-For Periodic y, the current code sets `y_dims = [2]` with `transpose_dims=nothing`.
-After the reshape, we need to ensure the DiscreteTransform correctly applies
-the (2,1,3) permutation before/after the FFT. This may require updating the
-DiscreteTransform dispatch for this case.
+The nsight data shows that the 2-GPU `regular_fft<400>` kernel is **identical**
+to the 1-GPU kernel (same template parameters). The difference is purely in
+call count: 48,000 vs 300 for 50 steps.
+
+The 1-GPU non-distributed solver uses a **batched 2D FFT plan along dims [1,2]**,
+which cuFFT executes as 80 batches of a 50×400 2D transform. cuFFT fuses the
+row and column transforms into a single efficient operation.
+
+The distributed solver does a **1D FFT along dim 2** only, which cuFFT sees as
+4000 independent length-400 transforms. Even with optimal batching, this is
+fundamentally less efficient than the 2D plan because cuFFT can't fuse the
+row/column transforms.
+
+**The distributed solver cannot do a batched 2D (x,y) FFT** because x and y
+data live on different grids — the y-FFT happens on `yfield` (before transpose)
+and the x-FFT happens on `xfield` (after transpose). They have different sizes
+and memory layouts.
+
+The reshape-to-contiguous strategy may still help reduce kernel launches from
+480 to ~60 per step (by improving cuFFT's batching efficiency), but it cannot
+achieve the 1-GPU batched 2D performance.
+
+**Fundamental options to close the gap:**
+1. **Accept the 1D FFT overhead** (~3.5 ms on 50×400×80) — at large grids the
+   overhead is a smaller fraction of total compute
+2. **Communication-avoiding solver** (multigrid, CG with FFT preconditioner) —
+   eliminates transpose communication entirely
+3. **cuFFTMp** — NVIDIA's distributed FFT library handles the transpose internally
+   with optimized NVSHMEM communication, but is not accessible from Julia
 
 ## Proposed Fix 2: Overlap Velocity Halo with Tracer Advance
 
