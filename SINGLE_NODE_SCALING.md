@@ -6,22 +6,73 @@ connected via NVLink. All communication uses NCCL via the
 
 ## Models Tested
 
-| Model | Solver | Microphysics | Tracers |
-|-------|--------|-------------|---------|
-| **HFSM** | SplitExplicit (30 substeps) | — | T, S |
-| **NHM** | FFT pressure (distributed transposes) | — | T, S |
-| **AM dry** | Anelastic FFT pressure | — | b |
-| **GATE SatAdj** | Anelastic FFT pressure | SaturationAdjustment (mixed phase) | θ, qᵉ |
-| **GATE 1M** | Anelastic FFT pressure | OneMomentCloudMicrophysics (warm) | θ, qᵛ, qᶜˡ, qʳ |
+| Model | Solver | Microphysics | Prognostic fields |
+|-------|--------|-------------|-------------------|
+| **HFSM** | SplitExplicit (30 substeps) | — | u, v, T, S, η |
+| **NHM** | FFT pressure (distributed transposes) | — | u, v, w, T, S |
+| **AM dry** | Anelastic FFT pressure | — | u, v, w, b |
+| **GATE SatAdj** | Anelastic FFT pressure | SaturationAdjustment (mixed phase) | u, v, w, θ, qᵉ |
+| **GATE 1M mixed** | Anelastic FFT pressure | 1-moment non-equilibrium (liquid + ice) | u, v, w, θ, qᵛ, qᶜˡ, qᶜⁱ, qʳ, qˢ |
 
-All benchmarks use Float32, WENO advection (order 5 or 7), and periodic
-horizontal boundary conditions.
+HFSM and NHM use WENO(order=7); AM and GATE use WENO(order=5).
+All use periodic horizontal boundary conditions.
+
+---
+
+## GATE III GigaLES — Full Resolution Performance
+
+### 2048×2048×181 (stretched vertical grid, 100 m horizontal resolution)
+
+> Requires ~96 GB in F32. Does not fit on a single A100.
+
+**Step time (ms) and 4→8 GPU scaling**
+
+| Microphysics | Fields | GPUs | F32 (ms) | F64 (ms) | F64/F32 |
+|-------------|--------|------|---------|---------|---------|
+| SatAdj | 5 | 4 (4×1) | 688.6 | 1187.6 | 1.72× |
+| SatAdj | 5 | 8 (8×1) | 348.8 | 605.8 | 1.74× |
+| 1M mixed | 9 | 4 (4×1) | 1128.8 | OOM | — |
+| 1M mixed | 9 | 8 (8×1) | 576.3 | 1060.6 | 1.84× |
+
+4→8 GPU efficiency: **97% (SatAdj F32)**, **96% (SatAdj F64)**, **98% (1M F32)**.
+
+F64 1M mixed at 4 GPUs OOMs (9 fields × Float64 exceeds 80 GB/GPU).
+
+### SDPD (Simulated Days Per Day) on 8 A100s
+
+ms/step is nearly constant across dt because the anelastic pressure
+solver dominates and its cost is independent of dt.
+
+**SatAdj microphysics (F32)**
+
+| dt (s) | ms/step | SDPD |
+|--------|---------|------|
+| 0.5 | 349.5 | 1.4 |
+| 1.0 | 349.2 | 2.9 |
+| 2.0 | 364.7 | 5.5 |
+| 3.0 | 377.7 | 7.9 |
+| 4.0 | 377.6 | **10.6** |
+
+**1M mixed-phase microphysics**
+
+| dt (s) | F32 ms/step | F32 SDPD | F64 ms/step | F64 SDPD |
+|--------|------------|----------|------------|----------|
+| 0.5 | 587.9 | 0.9 | 1069.8 | 0.5 |
+| 1.0 | 575.8 | 1.7 | 1060.5 | 0.9 |
+| 2.0 | 578.3 | 3.5 | 1076.7 | 1.9 |
+| 3.0 | 580.6 | 5.2 | 1127.8 | 2.7 |
+| 4.0 | 580.4 | **6.9** | 1127.8 | **3.5** |
+
+At CFL-limited dt (3–4 s for 100 m resolution with ~20 m/s winds):
+- **SatAdj F32: 8–11 SDPD**
+- **1M mixed F32: 5–7 SDPD**
+- **1M mixed F64: 3–4 SDPD**
 
 ---
 
 ## Strong Scaling
 
-Fixed total grid, distributed across more GPUs. Best partition shown.
+Fixed total grid, distributed across more GPUs.
 
 ### HFSM — 2800×2800×100 (SplitExplicit, no FFT solver)
 
@@ -67,43 +118,19 @@ Fixed total grid, distributed across more GPUs. Best partition shown.
 | 2×4 | 8 | 543.6 | 2.38× | 30% |
 | 1×8 | 8 | 285.2 | 4.54× | 57% |
 
-### GATE III full resolution — 2048×2048×181
-
-> Note: requires ~96 GB in F32, does not fit on a single A100.
-
-**SatAdj microphysics (5 prognostic fields)**
-
-| GPUs | F32 (ms) | F64 (ms) | F64/F32 |
-|------|---------|---------|---------|
-| 4 (4×1) | 688.6 | 1187.6 | 1.72× |
-| 8 (8×1) | 348.8 | 605.8 | 1.74× |
-
-4→8 efficiency: **97% (F32)**, **96% (F64)**
-
-**1M mixed-phase microphysics (9 prognostic fields: θ, qᵛ, qᶜˡ, qᶜⁱ, qʳ, qˢ)**
-
-| GPUs | F32 (ms) | F64 (ms) | F64/F32 |
-|------|---------|---------|---------|
-| 4 (4×1) | 1128.8 | OOM | — |
-| 8 (8×1) | 576.3 | 1060.6 | 1.84× |
-
-4→8 efficiency: **98% (F32)**. F64 at 4 GPUs OOMs (9 fields × F64 exceeds 80 GB/GPU).
-
 ---
 
 ## Weak Scaling
 
 400×400 horizontal grid points per GPU (HFSM/NHM: Nz=100, AM/GATE: Nz≈150–181).
 
-### Summary at 8 GPUs
+### Summary at 8 GPUs (best partition)
 
 | Model | 1-GPU (ms) | 8×1 (ms) | Efficiency |
 |-------|-----------|----------|------------|
 | HFSM (SplitExplicit) | 16.7 | 18.7 | **89%** |
 | NHM (FFT solver) | 74.8 | 97.5 | **77%** |
 | AM dry (Anelastic FFT) | 45.6 | 64.7 | **71%** |
-| GATE SatAdj | 75.5 | 108.9 | **69%** |
-| GATE 1M | 109.8 | 145.0 | **76%** |
 
 ### HFSM — 400×400×100/GPU
 
@@ -148,14 +175,20 @@ Fixed total grid, distributed across more GPUs. Best partition shown.
 | 4×2 | 8 | 100.7 | 45% |
 | 2×4 | 8 | 99.9 | 46% |
 
-### GATE III — 400×400×~150/GPU
+---
 
-| Partition | GPUs | SatAdj (ms) | SatAdj eff | 1M (ms) | 1M eff |
-|-----------|------|-------------|-----------|---------|--------|
-| 1×1 | 1 | 75.5 | 100% | 109.8 | 100% |
-| 2×1 | 2 | 115.7 | 65% | 143.4 | 77% |
-| 4×1 | 4 | 107.3 | 70% | 142.4 | 77% |
-| 8×1 | 8 | 108.9 | 69% | 145.0 | 76% |
+## F64 vs F32 Performance
+
+Single GPU, GATE setup (400×400×~150).
+
+| Microphysics | F32 (ms) | F64 (ms) | F64/F32 |
+|-------------|---------|---------|---------|
+| SatAdj (mixed phase) | 75.5 | 139.9 | 1.85× |
+| 1M mixed phase | 142.0 | 272.8 | 1.92× |
+
+The F64/F32 ratio of ~1.9× is consistent with the A100's 2:1 F32:F64
+throughput ratio. The ratio is slightly less than 2× because the FFT
+solver and NCCL communication are precision-independent.
 
 ---
 
@@ -200,7 +233,8 @@ Of the 69% NCCL time:
 
 ## Maximum Domain Size
 
-At 100 m horizontal resolution with the GATE stretched vertical grid (~181 levels):
+At 100 m horizontal resolution with the GATE stretched vertical grid
+(~181 levels), SatAdj microphysics, Float32:
 
 | Per-GPU grid | Memory | Fits A100 80 GB? |
 |-------------|--------|-------------------|
@@ -218,9 +252,9 @@ At 100 m horizontal resolution with the GATE stretched vertical grid (~181 level
 1. **HFSM scales near-perfectly** (92–95% at 8 GPUs) because it avoids the
    FFT pressure solver entirely. Partition geometry has minimal impact.
 
-2. **x-only partitions are optimal** for FFT-based models (NHM, AM). The
-   distributed FFT transposes in y→x, so x-partition keeps y local. 2D
-   partitions add 10–20% overhead from additional communication.
+2. **x-only partitions are optimal** for FFT-based models (NHM, AM, GATE).
+   The distributed FFT transposes in y→x, so x-partition keeps y local.
+   2D partitions add 10–20% overhead from additional communication.
 
 3. **The transpose dispatch fix doubled efficiency** for FFT-based models.
    The original code dispatched 3 of 4 transpose directions to CPU-staged
@@ -230,25 +264,15 @@ At 100 m horizontal resolution with the GATE stretched vertical grid (~181 level
    441.5 ms at 8 GPUs). The bottleneck is data volume, not collective
    implementation.
 
-5. **GATE full-resolution (2048×2048×181)** achieves 98% scaling from 4→8
-   GPUs, with **10.6 SDPD** at dt=4s on 8 A100s (ms/step is nearly
-   constant at 350–378 ms regardless of dt).
+5. **GATE GigaLES (2048×2048×181)** achieves 96–98% scaling from 4→8 GPUs
+   across all microphysics and precision configurations.
 
-## GATE SDPD (Simulated Days Per Day)
+6. **SDPD at full resolution on 8 A100s**: SatAdj F32 achieves **10.6 SDPD**;
+   1M mixed-phase F32 achieves **6.9 SDPD**; 1M mixed-phase F64 achieves
+   **3.5 SDPD** (all at dt=4s).
 
-GATE III full resolution (2048×2048×181, SatAdj) on 8 A100s (8×1):
-
-| dt (s) | ms/step | SDPD |
-|--------|---------|------|
-| 0.5 | 349.5 | 1.4 |
-| 1.0 | 349.2 | 2.9 |
-| 2.0 | 364.7 | 5.5 |
-| 3.0 | 377.7 | 7.9 |
-| 4.0 | 377.6 | **10.6** |
-
-ms/step is nearly constant because the anelastic pressure solver dominates
-and its cost is independent of dt. At CFL-limited dt (3–4s for 100m
-resolution with ~20 m/s winds), **8–11 SDPD** is achievable.
+7. **F64/F32 ratio is 1.7–1.9×**, less than the theoretical 2× because
+   the FFT solver and communication are precision-independent.
 
 ---
 
