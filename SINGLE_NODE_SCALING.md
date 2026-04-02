@@ -67,16 +67,27 @@ Fixed total grid, distributed across more GPUs. Best partition shown.
 | 2×4 | 8 | 543.6 | 2.38× | 30% |
 | 1×8 | 8 | 285.2 | 4.54× | 57% |
 
-### GATE III full resolution — 2048×2048×181 (SatAdj)
+### GATE III full resolution — 2048×2048×181
 
-> Note: requires ~96 GB, does not fit on a single A100.
+> Note: requires ~96 GB in F32, does not fit on a single A100.
 
-| GPUs | Partition | Per-GPU grid | ms/step |
-|------|-----------|-------------|---------|
-| 4 | 4×1 | 512×2048×181 | 686.9 |
-| 8 | 8×1 | 256×2048×181 | 349.2 |
+**SatAdj microphysics (5 prognostic fields)**
 
-4→8 GPU speedup: **1.97×** (98% efficiency for this doubling).
+| GPUs | F32 (ms) | F64 (ms) | F64/F32 |
+|------|---------|---------|---------|
+| 4 (4×1) | 688.6 | 1187.6 | 1.72× |
+| 8 (8×1) | 348.8 | 605.8 | 1.74× |
+
+4→8 efficiency: **97% (F32)**, **96% (F64)**
+
+**1M mixed-phase microphysics (9 prognostic fields: θ, qᵛ, qᶜˡ, qᶜⁱ, qʳ, qˢ)**
+
+| GPUs | F32 (ms) | F64 (ms) | F64/F32 |
+|------|---------|---------|---------|
+| 4 (4×1) | 1128.8 | OOM | — |
+| 8 (8×1) | 576.3 | 1060.6 | 1.84× |
+
+4→8 efficiency: **98% (F32)**. F64 at 4 GPUs OOMs (9 fields × F64 exceeds 80 GB/GPU).
 
 ---
 
