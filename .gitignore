@@ -4,3 +4,7 @@
 Manifest.toml
 launch.sh
 benchmarks/nccl_4gpu.nsys-rep benchmarks/nccl_4gpu_batched.nsys-rep benchmarks/nccl_4gpu_steady.nsys-rep
+
+# Nsight profiling outputs
+*.sqlite
+*.nsys-rep
