@@ -3,9 +3,11 @@ uuid = "a164bd6c-5415-48ab-9939-a25826670554"
 version = "0.1.0"
 
 [deps]
+AtmosphericProfilesLibrary = "86bc3604-9858-485a-bdbe-831ec50de11d"
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CloudMicrophysics = "6a9e3e04-43cd-43ba-94b9-e8782df3c71b"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 NCCL = "3fe64909-d7a1-4096-9b7d-7a0f12cf0f6b"
@@ -15,9 +17,11 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 
 [compat]
+AtmosphericProfilesLibrary = "0.1.5"
 Breeze = "0.4"
 CUDA = "5.9"
 CairoMakie = "0.15.9"
+CloudMicrophysics = "0.32.0"
 MPI = "0.20"
 MPIPreferences = "0.1.12"
 NCCL = "0.1.2"

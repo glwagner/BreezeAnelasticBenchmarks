@@ -98,6 +98,13 @@ if micro_type == "1M"
     microphysics = BreezeCloudMicrophysicsExt.OneMomentCloudMicrophysics(FT;
         cloud_formation = NonEquilibriumCloudFormation(nothing, nothing))
     label = "GATE_1M"
+elseif micro_type == "1M_mixed"
+    using CloudMicrophysics
+    CMP = CloudMicrophysics.Parameters
+    BreezeCloudMicrophysicsExt = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
+    microphysics = BreezeCloudMicrophysicsExt.OneMomentCloudMicrophysics(FT;
+        cloud_formation = NonEquilibriumCloudFormation(nothing, CMP.CloudIce(FT)))
+    label = "GATE_1M_mixed"
 else
     microphysics = SaturationAdjustment(equilibrium=MixedPhaseEquilibrium())
     label = "GATE_satadj"
@@ -126,7 +133,7 @@ end
 sponge = Forcing(sponge_damping, discrete_form=true,
     parameters=(; λ=1/10, zˢ, zᶜ=(zᵗ + zˢ)/2))
 
-if micro_type == "1M"
+if micro_type in ("1M", "1M_mixed")
     forcing = (ρw = sponge, ρθ = Forcing(∂t_ρe_ls), ρqᵛ = Forcing(∂t_ρqᵗ_ls))
 else
     forcing = (ρw = sponge, ρθ = Forcing(∂t_ρe_ls), ρqᵉ = Forcing(∂t_ρqᵗ_ls))
@@ -138,7 +145,7 @@ T_surface = 299.88
 ρqᵗ_bcs = FieldBoundaryConditions(bottom=BulkVaporFlux(coefficient=1.2e-3, surface_temperature=T_surface))
 ρu_bcs = FieldBoundaryConditions(bottom=Breeze.BulkDrag(coefficient=1.2e-3))
 ρv_bcs = FieldBoundaryConditions(bottom=Breeze.BulkDrag(coefficient=1.2e-3))
-if micro_type == "1M"
+if micro_type in ("1M", "1M_mixed")
     boundary_conditions = (ρθ=ρθ_bcs, ρqᵛ=ρqᵗ_bcs, ρu=ρu_bcs, ρv=ρv_bcs)
 else
     boundary_conditions = (ρθ=ρθ_bcs, ρqᵉ=ρqᵗ_bcs, ρu=ρu_bcs, ρv=ρv_bcs)
