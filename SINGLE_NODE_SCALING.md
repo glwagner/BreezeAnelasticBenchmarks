@@ -186,9 +186,12 @@ Single GPU, GATE setup (400×400×~150).
 | SatAdj (mixed phase) | 75.5 | 139.9 | 1.85× |
 | 1M mixed phase | 142.0 | 272.8 | 1.92× |
 
-The F64/F32 ratio of ~1.9× is consistent with the A100's 2:1 F32:F64
-throughput ratio. The ratio is slightly less than 2× because the FFT
-solver and NCCL communication are precision-independent.
+The F64/F32 ratio of ~1.7–1.9× is less than the A100's theoretical 2:1
+F32:F64 throughput ratio because NCCL communication (60–90% of step time)
+is approximately constant — NVLink bandwidth is not saturated even at 2×
+the bytes per transfer. The solver itself operates at the model precision
+(ComplexF32 FFTs, F32 tridiagonal coefficients), with only the Poisson
+eigenvalues stored in Float64 for numerical accuracy.
 
 ---
 
@@ -272,7 +275,8 @@ At 100 m horizontal resolution with the GATE stretched vertical grid
    **3.5 SDPD** (all at dt=4s).
 
 7. **F64/F32 ratio is 1.7–1.9×**, less than the theoretical 2× because
-   the FFT solver and communication are precision-independent.
+   NCCL communication (60–90% of step time) is approximately constant
+   regardless of precision — NVLink bandwidth is not saturated.
 
 ---
 
